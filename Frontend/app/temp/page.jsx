@@ -1,3 +1,14 @@
+export default function TempPage() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold mb-4">Temporary Page</h1>
+        <p className="text-gray-600">This is a temporary placeholder page.</p>
+      </div>
+    </div>
+  );
+}
+
 // "use client"
 // import { AppSidebar } from "@/components/app-sidebar"
 // import { ChartAreaInteractive } from "@/components/chart-area-interactive"
@@ -14,7 +25,7 @@
 
 // export default function Page() {
 //   return (
-  
+
 //       (
 //         <SidebarProvider
 //       style={
@@ -42,7 +53,7 @@
 //       </SidebarInset>
 //     </SidebarProvider>
 //     )
-  
-   
+
+
 //   );
 // }
