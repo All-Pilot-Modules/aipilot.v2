@@ -55,7 +55,7 @@ export default function PrivacyPolicyPage() {
                 Introduction
               </h2>
               <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-6">
-                AI Education Pilot ("we," "us," or "our") is committed to protecting your privacy. As an open-source educational platform, we believe in transparency and giving you control over your data. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our platform.
+                AI Education Pilot (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) is committed to protecting your privacy. As an open-source educational platform, we believe in transparency and giving you control over your data. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our platform.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12 flex items-center gap-2">
@@ -148,9 +148,9 @@ export default function PrivacyPolicyPage() {
                 We retain your data for as long as your account is active or as needed to provide services. You can request deletion of your data at any time. Some data may be retained for legal compliance purposes even after deletion.
               </p>
 
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">Children's Privacy</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">Children&apos;s Privacy</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Our platform is designed for educational use and may be used by minors under the supervision of teachers. We comply with COPPA (Children's Online Privacy Protection Act) and obtain appropriate consent from schools and parents.
+                Our platform is designed for educational use and may be used by minors under the supervision of teachers. We comply with COPPA (Children&apos;s Online Privacy Protection Act) and obtain appropriate consent from schools and parents.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">Self-Hosting and Data Control</h2>
@@ -160,7 +160,7 @@ export default function PrivacyPolicyPage() {
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">Changes to This Policy</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Last updated" date.
+                We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the &quot;Last updated&quot; date.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">Contact Us</h2>

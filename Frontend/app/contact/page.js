@@ -72,7 +72,7 @@ export default function ContactPage() {
             </span>
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-            Have questions, suggestions, or need help? We'd love to hear from you!
+            Have questions, suggestions, or need help? We&apos;d love to hear from you!
           </p>
         </div>
 
@@ -85,7 +85,7 @@ export default function ContactPage() {
               {submitted && (
                 <div className="mb-6 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
                   <p className="text-green-700 dark:text-green-300 font-medium">
-                    ✓ Message sent! We'll get back to you soon.
+                    ✓ Message sent! We&apos;ll get back to you soon.
                   </p>
                 </div>
               )}

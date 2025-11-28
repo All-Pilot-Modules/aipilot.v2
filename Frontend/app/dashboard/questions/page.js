@@ -3,6 +3,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
 import dynamic from 'next/dynamic';
+import NextImage from 'next/image';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -879,6 +880,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
                         <div className="mt-2 space-y-3">
                           {imagePreview ? (
                             <div className="relative">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={imagePreview}
                                 alt="Question preview"
@@ -891,6 +893,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
                                   variant="outline"
                                   onClick={() => document.getElementById('image-upload').click()}
                                 >
+                                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                   <Image className="w-4 h-4 mr-2" />
                                   Replace Image
                                 </Button>
@@ -911,6 +914,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
                               onClick={() => document.getElementById('image-upload').click()}
                               className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors"
                             >
+                              {/* eslint-disable-next-line jsx-a11y/alt-text */}
                               <Image className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
                               <p className="text-sm font-medium mb-1">Click to upload an image</p>
                               <p className="text-xs text-muted-foreground">

@@ -233,28 +233,28 @@ function GradingPageContent() {
       console.log('🔄 Fetching modules...');
       const modulesResponse = await apiClient.get(`/api/modules?teacher_id=${teacherId}`);
       const modules = modulesResponse.data || modulesResponse;
-      const module = modules.find(m => m.name.toLowerCase() === moduleName.toLowerCase());
+      const foundModule = modules.find(m => m.name.toLowerCase() === moduleName.toLowerCase());
 
-      if (!module) {
+      if (!foundModule) {
         setError(`Module "${moduleName}" not found`);
         return;
       }
 
-      setModuleData(module);
+      setModuleData(foundModule);
 
       // Log module configuration for debugging
       console.log('📋 Module Config:', {
-        name: module.name,
-        assignment_config: module.assignment_config,
-        max_attempts_path: module.assignment_config?.features?.multiple_attempts?.max_attempts,
-        full_config: JSON.stringify(module.assignment_config, null, 2)
+        name: foundModule.name,
+        assignment_config: foundModule.assignment_config,
+        max_attempts_path: foundModule.assignment_config?.features?.multiple_attempts?.max_attempts,
+        full_config: JSON.stringify(foundModule.assignment_config, null, 2)
       });
 
       // Get all student answers for this module
       console.log('🔄 Fetching student answers...');
       let allModuleAnswers = [];
       try {
-        const moduleAnswersResponse = await apiClient.get(`/api/student-answers?module_id=${module.id}`);
+        const moduleAnswersResponse = await apiClient.get(`/api/student-answers?module_id=${foundModule.id}`);
         allModuleAnswers = moduleAnswersResponse.data || moduleAnswersResponse || [];
         console.log(`📝 Total student answers in module: ${allModuleAnswers.length}`);
       } catch (err) {
@@ -264,7 +264,7 @@ function GradingPageContent() {
 
       // Get questions to know total count
       console.log('🔄 Fetching questions...');
-      const questionsResponse = await apiClient.get(`/api/student/modules/${module.id}/questions`);
+      const questionsResponse = await apiClient.get(`/api/student/modules/${foundModule.id}/questions`);
       const questions = questionsResponse.data || questionsResponse;
 
       console.log(`❓ Total questions in module: ${questions.length}`);
@@ -304,9 +304,9 @@ function GradingPageContent() {
         // Get max attempts from assignment config with multiple fallbacks
         let maxAttempts = 2; // Default fallback
 
-        if (module.assignment_config?.features?.multiple_attempts?.max_attempts) {
-          maxAttempts = module.assignment_config.features.multiple_attempts.max_attempts;
-        } else if (module.assignment_config?.features?.multiple_attempts?.enabled) {
+        if (foundModule.assignment_config?.features?.multiple_attempts?.max_attempts) {
+          maxAttempts = foundModule.assignment_config.features.multiple_attempts.max_attempts;
+        } else if (foundModule.assignment_config?.features?.multiple_attempts?.enabled) {
           // If multiple attempts is enabled but no max specified, use 2
           maxAttempts = 2;
         } else {
@@ -314,7 +314,7 @@ function GradingPageContent() {
           maxAttempts = 2;
         }
 
-        console.log(`🔍 Checking student ${student.student_id}: has ${student.attempts.size} attempts, needs ${maxAttempts} (config: ${module.assignment_config?.features?.multiple_attempts?.max_attempts || 'not set'})`);
+        console.log(`🔍 Checking student ${student.student_id}: has ${student.attempts.size} attempts, needs ${maxAttempts} (config: ${foundModule.assignment_config?.features?.multiple_attempts?.max_attempts || 'not set'})`);
 
         // Student must have completed EXACTLY the max number of attempts (not more, not less)
         const hasCompletedAllAttempts = student.attempts.size === maxAttempts;
@@ -359,7 +359,7 @@ function GradingPageContent() {
         try {
           // Fetch all grades for all students in parallel (much faster than sequential)
           const gradeRequests = studentIds.map(studentId =>
-            apiClient.get(`/api/student-answers/teacher-grades/module/${module.id}/student/${studentId}`)
+            apiClient.get(`/api/student-answers/teacher-grades/module/${foundModule.id}/student/${studentId}`)
               .then(res => ({ studentId, data: res.data || res }))
               .catch(() => ({ studentId, data: { total_grades: 0 } }))
           );

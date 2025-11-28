@@ -51,9 +51,9 @@ function RubricSettingsContent() {
     try {
       const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
       const modules = response?.data || response || [];
-      const module = modules.find(m => m.name === moduleName);
-      if (module) {
-        setModuleId(module.id);
+      const foundModule = modules.find(m => m.name === moduleName);
+      if (foundModule) {
+        setModuleId(foundModule.id);
       }
     } catch (error) {
       console.error('Failed to fetch module:', error);
@@ -297,7 +297,7 @@ function RubricSettingsContent() {
                           You have unsaved changes
                         </p>
                         <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
-                          Don't forget to save your settings before leaving this page
+                          Don&apos;t forget to save your settings before leaving this page
                         </p>
                       </div>
                     </div>

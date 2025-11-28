@@ -399,7 +399,7 @@ function StudentDetailPageContent() {
             <div className="flex items-start gap-2 mb-2">
               <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5" />
               <div className="flex-1">
-                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100 uppercase">Teacher's Grade</span>
+                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100 uppercase">Teacher&apos;s Grade</span>
                 <div className="mt-1">
                   <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
                     {teacherGrade.points_awarded} pts

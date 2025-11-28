@@ -105,7 +105,7 @@ export default function AboutPage() {
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Our Story</h2>
             <div className="space-y-4 text-gray-600 dark:text-gray-400 leading-relaxed">
               <p>
-                AI Education Pilot was born from a simple observation: while AI technology has made incredible advances, most educational institutions still rely on outdated tools that don't leverage these breakthroughs.
+                AI Education Pilot was born from a simple observation: while AI technology has made incredible advances, most educational institutions still rely on outdated tools that don&apos;t leverage these breakthroughs.
               </p>
               <p>
                 We started this project as a team of educators, developers, and AI researchers who believed that every teacher deserves access to the same powerful analytics tools used by large tech companies. We were tired of seeing expensive, proprietary solutions that only wealthy institutions could afford.
@@ -114,7 +114,7 @@ export default function AboutPage() {
                 Our solution? Build it ourselves and make it free and open source forever. No paywalls, no feature limitations, no vendor lock-in. Just powerful AI technology that anyone can use, modify, and improve.
               </p>
               <p>
-                Today, AI Education Pilot helps educators understand their students better, identify learning gaps earlier, and provide personalized support at scale. And we're just getting started.
+                Today, AI Education Pilot helps educators understand their students better, identify learning gaps earlier, and provide personalized support at scale. And we&apos;re just getting started.
               </p>
             </div>
           </CardContent>

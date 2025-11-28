@@ -38,9 +38,9 @@ function ChatbotSettingsContent() {
         setLoading(true);
         const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
         const modules = response?.data || response || [];
-        const module = modules.find(m => m.name === moduleName);
-        if (module) {
-          setModuleId(module.id);
+        const foundModule = modules.find(m => m.name === moduleName);
+        if (foundModule) {
+          setModuleId(foundModule.id);
         } else {
           setError("Module not found");
         }
