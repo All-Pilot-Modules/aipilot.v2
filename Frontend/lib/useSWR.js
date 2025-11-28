@@ -65,7 +65,7 @@ export async function prefetchAPI(key) {
  *
  * @param {string[]} keys - Array of cache keys to invalidate
  */
-export function mutateMultiple(keys) {
+export function useMutateMultiple(keys) {
   const { mutate: globalMutate } = useSWRConfig();
   keys.forEach(key => globalMutate(key));
 }

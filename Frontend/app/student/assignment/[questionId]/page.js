@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,25 +44,7 @@ function StudentAssignmentContent() {
   const [timeSpent, setTimeSpent] = useState(0);
   const [startTime] = useState(Date.now());
 
-  useEffect(() => {
-    // Check access
-    const accessData = sessionStorage.getItem('student_module_access');
-    if (!accessData || JSON.parse(accessData).moduleId !== moduleId) {
-      router.push('/join');
-      return;
-    }
-
-    loadQuestion();
-    
-    // Track time spent
-    const interval = setInterval(() => {
-      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [questionId, moduleId, router, startTime]);
-
-  const loadQuestion = async () => {
+  const loadQuestion = useCallback(async () => {
     try {
       setLoading(true);
       const accessData = JSON.parse(sessionStorage.getItem('student_module_access'));
@@ -97,7 +79,25 @@ function StudentAssignmentContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [questionId]);
+
+  useEffect(() => {
+    // Check access
+    const accessData = sessionStorage.getItem('student_module_access');
+    if (!accessData || JSON.parse(accessData).moduleId !== moduleId) {
+      router.push('/join');
+      return;
+    }
+
+    loadQuestion();
+
+    // Track time spent
+    const interval = setInterval(() => {
+      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [questionId, moduleId, router, startTime, loadQuestion]);
 
   const handleSaveDraft = async () => {
     const currentAnswer = question?.type === 'mcq' ? selectedOption : answer;
@@ -318,6 +318,7 @@ function StudentAssignmentContent() {
 
                 {question?.image_url && (
                   <div className="border rounded-lg overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={question.image_url}
                       alt={`Visual content for: ${question.question_text?.substring(0, 150)}${question.question_text?.length > 150 ? '...' : ''}`}

@@ -1192,7 +1192,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                 Your teacher has graded Attempt {attemptWithGrades}!
                               </p>
                               <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                                Switch to Attempt {attemptWithGrades} to see your final grade and teacher's feedback.
+                                Switch to Attempt {attemptWithGrades} to see your final grade and teacher&apos;s feedback.
                               </p>
                             </div>
                             <Button
@@ -1555,6 +1555,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                 </p>
                                 {question.image_url && (
                                   <div className="mt-3">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={question.image_url}
                                       alt={`Visual content for Question ${index + 1}: ${question.question_text?.substring(0, 100)}${question.question_text?.length > 100 ? '...' : ''}`}
@@ -1896,7 +1897,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                         </div>
                                         <div className="flex-1">
                                           <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 mb-2">
-                                            Teacher's Final Grade
+                                            Teacher&apos;s Final Grade
                                           </p>
                                           <div className="bg-white dark:bg-gray-900 p-3 rounded-md mb-2">
                                             <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
@@ -1906,7 +1907,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                           {feedback.teacher_grade.feedback_text && (
                                             <div className="bg-white dark:bg-gray-900 p-3 rounded-md">
                                               <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-                                                Teacher's Comments:
+                                                Teacher&apos;s Comments:
                                               </p>
                                               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                                                 {feedback.teacher_grade.feedback_text}
@@ -2107,7 +2108,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                         <User className="w-5 h-5 text-white" />
                       </div>
                       <div>
-                        <CardTitle className="text-emerald-900 dark:text-emerald-100">Teacher's Final Grade</CardTitle>
+                        <CardTitle className="text-emerald-900 dark:text-emerald-100">Teacher&apos;s Final Grade</CardTitle>
                         <CardDescription className="text-emerald-700 dark:text-emerald-300">
                           Your teacher has reviewed your work
                         </CardDescription>

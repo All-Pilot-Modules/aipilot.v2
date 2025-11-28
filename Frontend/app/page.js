@@ -14,14 +14,7 @@ export default function Home() {
   const [modules, setModules] = useState([]);
   const [loadingModules, setLoadingModules] = useState(false);
 
-  // Fetch modules when authenticated - Hook must be called unconditionally
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      fetchModules();
-    }
-  }, [isAuthenticated, user]);
-
-  const fetchModules = async () => {
+  const fetchModules = useCallback(async () => {
     try {
       setLoadingModules(true);
       const teacherId = user?.id || user?.sub;
@@ -35,7 +28,14 @@ export default function Home() {
     } finally {
       setLoadingModules(false);
     }
-  };
+  }, [user]);
+
+  // Fetch modules when authenticated - Hook must be called unconditionally
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      fetchModules();
+    }
+  }, [isAuthenticated, user, fetchModules]);
 
   if (loading) {
     return (

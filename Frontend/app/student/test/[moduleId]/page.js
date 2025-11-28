@@ -114,9 +114,9 @@ const StudentTestPage = memo(function StudentTestPage() {
         clearTimeout(autoSaveTimeout);
       }
     };
-  }, [moduleId, router, startTime]);
+  }, [moduleId, router, startTime, loadTestData, autoSaveTimeout]);
 
-  const loadTestData = async (access) => {
+  const loadTestData = useCallback(async (access) => {
     try {
       setLoading(true);
 
@@ -309,7 +309,7 @@ const StudentTestPage = memo(function StudentTestPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [moduleId]);
 
   const updateAnswer = (questionId, answer) => {
     // Check if answer is the same to prevent duplicate API calls
@@ -1328,6 +1328,7 @@ const StudentTestPage = memo(function StudentTestPage() {
                   {/* Question Image */}
                   {currentQ?.image_url && (
                     <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={currentQ.image_url}
                         alt={`Visual content for Question ${currentQuestion + 1}: ${currentQ.question_text?.substring(0, 100)}${currentQ.question_text?.length > 100 ? '...' : ''}`}
@@ -1647,7 +1648,7 @@ const StudentTestPage = memo(function StudentTestPage() {
                 <div className="border-t pt-4">
                   <div className="flex flex-col gap-3">
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Ready to submit? You've answered {getAnsweredCount()} of {questions.length} questions
+                      Ready to submit? You&apos;ve answered {getAnsweredCount()} of {questions.length} questions
                     </div>
                     <Button
                       onClick={handleSubmitTest}

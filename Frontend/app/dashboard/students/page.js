@@ -288,7 +288,7 @@ const StudentsPageContent = memo(function StudentsPageContent() {
       console.log('🏁 [Students Page] fetchModuleData completed');
       setLoadingStudents(false);
     }
-  }, [user, moduleName]);
+  }, [user, moduleName, moduleData?.assignment_config?.passing_score]);
 
   // Fetch module data and students when component mounts or module changes
   useEffect(() => {

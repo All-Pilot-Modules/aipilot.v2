@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 export default function VerifyEmail() {
   const router = useRouter();
@@ -16,14 +17,7 @@ export default function VerifyEmail() {
   const [resending, setResending] = useState(false);
   const [verifyingToken, setVerifyingToken] = useState(false);
 
-  // Auto-verify if token is present in URL (magic link)
-  useEffect(() => {
-    if (token) {
-      verifyWithToken(token);
-    }
-  }, [token]);
-
-  const verifyWithToken = async (verificationToken) => {
+  const verifyWithToken = useCallback(async (verificationToken) => {
     setVerifyingToken(true);
     setError('');
 
@@ -47,7 +41,14 @@ export default function VerifyEmail() {
     } finally {
       setVerifyingToken(false);
     }
-  };
+  }, [router]);
+
+  // Auto-verify if token is present in URL (magic link)
+  useEffect(() => {
+    if (token) {
+      verifyWithToken(token);
+    }
+  }, [token, verifyWithToken]);
 
   const handleCodeChange = (index, value) => {
     // Only allow digits
@@ -233,7 +234,7 @@ export default function VerifyEmail() {
 
             <div className="text-center">
               <p className="text-sm text-gray-600 mb-2">
-                Didn't receive the code?
+                Didn&apos;t receive the code?
               </p>
               <button
                 onClick={handleResendEmail}
@@ -247,9 +248,9 @@ export default function VerifyEmail() {
             <div className="mt-6 pt-6 border-t border-gray-200 text-center">
               <p className="text-sm text-gray-600">
                 Wrong email?{' '}
-                <a href="/sign-up" className="text-indigo-600 hover:text-indigo-700 font-semibold">
+                <Link href="/sign-up" className="text-indigo-600 hover:text-indigo-700 font-semibold">
                   Register again
-                </a>
+                </Link>
               </p>
             </div>
           </>

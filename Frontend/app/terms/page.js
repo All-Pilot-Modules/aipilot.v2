@@ -55,7 +55,7 @@ export default function TermsOfServicePage() {
                 1. Acceptance of Terms
               </h2>
               <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-6">
-                By accessing and using AI Education Pilot ("the Platform"), you accept and agree to be bound by the terms and provisions of this agreement. If you do not agree to these Terms of Service, please do not use the Platform.
+                By accessing and using AI Education Pilot (&quot;the Platform&quot;), you accept and agree to be bound by the terms and provisions of this agreement. If you do not agree to these Terms of Service, please do not use the Platform.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">2. Open Source License</h2>
@@ -93,7 +93,7 @@ export default function TermsOfServicePage() {
                 <li>Use the Platform for any illegal or unauthorized purpose</li>
                 <li>Violate any laws in your jurisdiction</li>
                 <li>Transmit any malicious code or viruses</li>
-                <li>Attempt to gain unauthorized access to the Platform or other users' accounts</li>
+                <li>Attempt to gain unauthorized access to the Platform or other users&apos; accounts</li>
                 <li>Impersonate any person or entity</li>
                 <li>Harass, abuse, or harm other users</li>
                 <li>Scrape, copy, or harvest data without permission</li>
@@ -112,7 +112,7 @@ export default function TermsOfServicePage() {
 
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6">5.2 AI-Generated Content</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                The Platform uses AI (OpenAI GPT-4) to generate feedback and insights. AI-generated content is provided "as is" and should be reviewed by educators before use. We are not responsible for the accuracy of AI-generated content.
+                The Platform uses AI (OpenAI GPT-4) to generate feedback and insights. AI-generated content is provided &quot;as is&quot; and should be reviewed by educators before use. We are not responsible for the accuracy of AI-generated content.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">6. Privacy and Data Protection</h2>
@@ -137,7 +137,7 @@ export default function TermsOfServicePage() {
                 8. Disclaimer of Warranties
               </h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                THE PLATFORM IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED. WE DO NOT WARRANT THAT THE PLATFORM WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE. USE AT YOUR OWN RISK.
+                THE PLATFORM IS PROVIDED &quot;AS IS&quot; WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED. WE DO NOT WARRANT THAT THE PLATFORM WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE. USE AT YOUR OWN RISK.
               </p>
 
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-12">9. Limitation of Liability</h2>
@@ -151,7 +151,7 @@ export default function TermsOfServicePage() {
               </p>
               <ul className="list-disc pl-6 text-gray-600 dark:text-gray-400 space-y-2 mb-6">
                 <li>FERPA (Family Educational Rights and Privacy Act)</li>
-                <li>COPPA (Children's Online Privacy Protection Act)</li>
+                <li>COPPA (Children&apos;s Online Privacy Protection Act)</li>
                 <li>State and local education privacy laws</li>
                 <li>Institutional data protection policies</li>
               </ul>
