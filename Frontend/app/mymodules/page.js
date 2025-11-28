@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, RotateCcw, ExternalLink, Check, Trash2, Settings, FileText } from "lucide-react";
+import { Copy, RotateCcw, ExternalLink, Check, Trash2, Settings, FileText, Plus, Loader2, Sparkles, Rocket } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { apiClient } from "@/lib/auth";
@@ -244,25 +244,58 @@ export default function MyModules() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        <div className="mb-10">
-          <h1 className="text-2xl font-semibold text-foreground mb-2">My Modules</h1>
-          <p className="text-muted-foreground">Create and manage your modules</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-950 dark:via-blue-950/10 dark:to-purple-950/10">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Premium Header */}
+        <div className="mb-10 relative overflow-hidden rounded-3xl">
+          <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-500 opacity-95"></div>
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjIiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')] opacity-30"></div>
+          <div className="relative p-8 md:p-12 text-white">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                  <Badge className="bg-white/30 backdrop-blur-sm border-white/40 text-white font-bold text-sm px-4 py-1.5">
+                    ⭐ MOST IMPORTANT PAGE
+                  </Badge>
+                  <Sparkles className="w-6 h-6 animate-pulse" />
+                </div>
+                <h1 className="text-4xl md:text-5xl font-bold mb-3 tracking-tight drop-shadow-lg">
+                  Module Management
+                </h1>
+                <p className="text-lg text-white/90">
+                  Create and manage your educational modules - your central hub for course management
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-4xl font-bold">{modules.length}</div>
+                  <div className="text-sm text-white/80">Total Modules</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Create Module Form - Left Side */}
           <div className="lg:col-span-1">
             <div className="space-y-6">
-              <Card className="sticky top-6">
-                <CardHeader>
-                  <CardTitle className="text-lg">Create New Module</CardTitle>
-                </CardHeader>
+              <div className="relative overflow-hidden rounded-2xl sticky top-6">
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                <Card className="shadow-2xl border-2 border-indigo-100 dark:border-indigo-900">
+                  <CardHeader className="pb-4 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                        <Plus className="w-5 h-5 text-white" />
+                      </div>
+                      <CardTitle className="text-xl font-bold">Create New Module</CardTitle>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Configure your module settings</p>
+                  </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                      <Label htmlFor="name">Module Name</Label>
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm font-medium">Module Name</Label>
                       <Input
                         id="name"
                         value={formData.name}
@@ -270,28 +303,28 @@ export default function MyModules() {
                           const value = e.target.value.replace(/\s/g, '');
                           setFormData({...formData, name: value});
                         }}
-                        placeholder="Enter module name (no spaces)"
+                        placeholder="e.g., intro-to-programming"
                         required
                         pattern="[^\s]+"
                         title="Module name cannot contain spaces"
-                        className="mt-1"
+                        className="h-10"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">No spaces allowed. Use hyphens or underscores instead.</p>
+                      <p className="text-xs text-muted-foreground">Use hyphens or underscores instead of spaces</p>
                     </div>
-                    <div>
-                      <Label htmlFor="description">Description</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="description" className="text-sm font-medium">Description</Label>
                       <Textarea
                         id="description"
                         value={formData.description}
                         onChange={(e) => setFormData({...formData, description: e.target.value})}
-                        placeholder="Enter module description"
+                        placeholder="Brief description of this module..."
                         rows={3}
-                        className="mt-1"
+                        className="resize-none"
                       />
                     </div>
 
                     {/* Rubric Template Selector */}
-                    <div className="pt-2 border-t">
+                    <div className="pt-4 border-t space-y-2">
                       <RubricQuickSelector
                         value={formData.rubric_template}
                         onChange={(template) => setFormData({...formData, rubric_template: template})}
@@ -299,10 +332,10 @@ export default function MyModules() {
                     </div>
 
                     {/* Assignment Features Section */}
-                    <div className="space-y-4 pt-2 border-t">
+                    <div className="space-y-3 pt-4 border-t">
                       <div>
                         <Label className="text-sm font-medium">Assignment Features</Label>
-                        <p className="text-xs text-muted-foreground">Configure how students interact with assignments</p>
+                        <p className="text-xs text-muted-foreground mt-1">Configure student interaction settings</p>
                         <div className="flex flex-wrap gap-1 mt-1">
                           <span className="text-xs text-muted-foreground">Active:</span>
                           {formData.assignment_config.features.multiple_attempts.enabled && (
@@ -321,49 +354,66 @@ export default function MyModules() {
                         onChange={(config) => setFormData({...formData, assignment_config: config})}
                       />
                     </div>
-                    
-                    <Button type="submit" disabled={isSubmitting} className="w-full">
-                      {isSubmitting ? 'Creating...' : 'Create Module'}
+
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-12 text-base font-bold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 mt-6"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          Creating Module...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-5 h-5 mr-2" />
+                          Create Module
+                        </>
+                      )}
                     </Button>
                   </form>
                 </CardContent>
               </Card>
             </div>
           </div>
+          </div>
 
           {/* Modules Grid - Right Side */}
           <div className="lg:col-span-2">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-foreground mb-2">Your Modules</h2>
-              <p className="text-muted-foreground">Manage and share your created modules</p>
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-foreground mb-2">Your Modules</h2>
+              <p className="text-sm text-muted-foreground">View and manage all your created modules</p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {modules.map((module) => (
-                <Card key={module.id} className="group hover:shadow-lg transition-all duration-200 border-border bg-card/50 backdrop-blur-sm">
+                <Card key={module.id} className="group hover:shadow-md transition-all duration-200 border bg-card">
                   <CardContent className="p-6">
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                       {/* Header */}
-                      <div className="text-center border-b border-border pb-4">
-                        <h3 className="font-bold text-xl text-foreground mb-1">{module.name}</h3>
+                      <div className="border-b border-border pb-4">
+                        <h3 className="font-semibold text-lg text-foreground mb-2">{module.name}</h3>
                         {module.description && (
-                          <p className="text-muted-foreground text-sm">{module.description}</p>
+                          <p className="text-muted-foreground text-sm leading-relaxed">{module.description}</p>
                         )}
                       </div>
                       
                       {/* Access Code Section */}
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Access Code</Label>
+                      <div className="space-y-3">
+                        <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Student Access Code</Label>
                         <div className="flex items-center gap-2">
-                          <span className="flex-1 font-mono bg-muted/80 px-3 py-2 rounded-md text-center text-lg font-bold text-foreground border-2 border-dashed border-border">
-                            {module.access_code}
-                          </span>
-                          <div className="flex gap-1">
+                          <div className="flex-1 bg-muted/50 px-4 py-3 rounded-lg border border-border">
+                            <span className="font-mono text-lg font-bold text-foreground tracking-wider">
+                              {module.access_code}
+                            </span>
+                          </div>
+                          <div className="flex gap-1.5">
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => copyToClipboard(module.access_code, 'code', module.id)}
-                              className="h-9 w-9 p-0"
+                              className="h-10 w-10 p-0 hover:bg-muted"
                               title="Copy access code"
                             >
                               {copiedItems[`${module.id}-code`] ? (
@@ -379,7 +429,7 @@ export default function MyModules() {
                                 setModuleToRegenerate(module.id);
                                 setShowRegenerateDialog(true);
                               }}
-                              className="h-9 w-9 p-0"
+                              className="h-10 w-10 p-0 hover:bg-muted"
                               title="Regenerate access code"
                             >
                               <RotateCcw className="w-4 h-4" />
@@ -389,30 +439,30 @@ export default function MyModules() {
                       </div>
 
                       {/* Join URL Section */}
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Join URL</Label>
+                      <div className="space-y-3">
+                        <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Enrollment URL</Label>
                         <div className="relative">
-                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <p className="text-xs text-blue-700 dark:text-blue-300 font-mono break-all">
+                          <div className="bg-muted/30 p-3.5 rounded-lg border border-border">
+                            <p className="text-xs text-foreground/70 font-mono break-all leading-relaxed">
                               {generateModuleUrl(module)}
                             </p>
                           </div>
-                          <div className="flex justify-center gap-2 mt-2">
+                          <div className="flex gap-2 mt-3">
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => copyToClipboard(generateModuleUrl(module), 'url', module.id)}
-                              className="flex-1 h-8"
+                              className="flex-1 h-9 hover:bg-muted"
                             >
                               {copiedItems[`${module.id}-url`] ? (
                                 <>
-                                  <Check className="w-3 h-3 mr-1 text-green-600" />
-                                  <span className="text-xs">Copied</span>
+                                  <Check className="w-3.5 h-3.5 mr-2 text-green-600" />
+                                  <span className="text-sm font-medium">Copied</span>
                                 </>
                               ) : (
                                 <>
-                                  <Copy className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Copy</span>
+                                  <Copy className="w-3.5 h-3.5 mr-2" />
+                                  <span className="text-sm font-medium">Copy URL</span>
                                 </>
                               )}
                             </Button>
@@ -420,21 +470,21 @@ export default function MyModules() {
                               size="sm"
                               variant="outline"
                               onClick={() => window.open(generateModuleUrl(module), '_blank')}
-                              className="h-8 px-3"
+                              className="h-9 px-4 hover:bg-muted"
                               title="Open in new tab"
                             >
-                              <ExternalLink className="w-3 h-3" />
+                              <ExternalLink className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         </div>
                       </div>
 
                       {/* Actions */}
-                      <div className="pt-2 border-t border-border">
+                      <div className="pt-4 border-t border-border">
                         <div className="space-y-2">
-                          <Button asChild size="lg" className="w-full group-hover:shadow-md transition-shadow font-semibold">
+                          <Button asChild size="lg" className="w-full bg-primary hover:bg-primary/90 font-medium shadow-sm">
                             <Link href={`/dashboard?module=${encodeURIComponent(module.name)}`}>
-                              🚀 Manage
+                              Manage Module
                             </Link>
                           </Button>
                           <div className="grid grid-cols-3 gap-2">
@@ -442,10 +492,10 @@ export default function MyModules() {
                               asChild
                               variant="outline"
                               size="sm"
-                              className="w-full"
+                              className="w-full h-9 text-xs hover:bg-muted"
                             >
                               <Link href={`/dashboard/rubric?moduleId=${module.id}&moduleName=${encodeURIComponent(module.name)}`}>
-                                <Settings className="w-3 h-3 mr-1" />
+                                <Settings className="w-3.5 h-3.5 mr-1.5" />
                                 Rubric
                               </Link>
                             </Button>
@@ -453,10 +503,10 @@ export default function MyModules() {
                               asChild
                               variant="outline"
                               size="sm"
-                              className="w-full"
+                              className="w-full h-9 text-xs hover:bg-muted"
                             >
                               <Link href={`/module/${module.id}/consent`}>
-                                <FileText className="w-3 h-3 mr-1" />
+                                <FileText className="w-3.5 h-3.5 mr-1.5" />
                                 Consent
                               </Link>
                             </Button>
@@ -465,16 +515,16 @@ export default function MyModules() {
                               size="sm"
                               onClick={() => deleteModule(module.id, module.name)}
                               disabled={deletingModules[module.id]}
-                              className="w-full"
+                              className="w-full h-9 text-xs"
                             >
                               {deletingModules[module.id] ? (
                                 <>
-                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></div>
-                                  Deleting...
+                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white mr-1.5"></div>
+                                  <span className="text-xs">Deleting</span>
                                 </>
                               ) : (
                                 <>
-                                  <Trash2 className="w-3 h-3 mr-2" />
+                                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                                   Delete
                                 </>
                               )}
@@ -489,11 +539,13 @@ export default function MyModules() {
             </div>
 
             {modules.length === 0 && (
-              <Card className="border-border max-w-md mx-auto">
-                <CardContent className="py-12 text-center">
-                  <div className="text-6xl mb-4">📚</div>
-                  <p className="text-muted-foreground mb-2 font-medium">No modules yet</p>
-                  <p className="text-sm text-muted-foreground">Create your first module using the form above to get started.</p>
+              <Card className="border-dashed border-2 max-w-md mx-auto">
+                <CardContent className="py-16 text-center">
+                  <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-6">
+                    <FileText className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No modules created yet</h3>
+                  <p className="text-sm text-muted-foreground">Get started by creating your first module using the form on the left.</p>
                 </CardContent>
               </Card>
             )}
@@ -505,29 +557,37 @@ export default function MyModules() {
       <AlertDialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Regenerate Access Code?</AlertDialogTitle>
+            <AlertDialogTitle className="text-xl font-semibold">Regenerate Access Code</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <div>
+              <div className="space-y-4 pt-2">
+                <p className="text-sm text-foreground/80">
                   Are you sure you want to regenerate the access code for this module?
-                </div>
-                <div className="font-semibold text-orange-600 dark:text-orange-400">
-                  ⚠️ Warning: The current access code will immediately become invalid.
-                </div>
-                <div className="text-sm">
-                  Students with the old code will no longer be able to access the module.
-                  You will need to share the new code with all students.
+                </p>
+                <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="font-semibold text-sm text-orange-900 dark:text-orange-100">Warning</p>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
+                        The current access code will immediately become invalid. Students with the old code will no longer be able to access the module. You will need to share the new code with all students.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="mt-6">
+            <AlertDialogCancel className="h-10">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={regenerateAccessCode}
-              className="bg-orange-600 hover:bg-orange-700 focus:ring-orange-600"
+              className="bg-orange-600 hover:bg-orange-700 focus:ring-orange-600 h-10"
             >
-              Yes, Regenerate Code
+              Regenerate Code
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

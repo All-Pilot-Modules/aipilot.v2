@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Brain, User, MessageSquare, Send } from "lucide-react";
 import { apiClient } from "@/lib/auth";
 
@@ -25,14 +26,18 @@ export default function ChatTab({ moduleId, moduleAccess }) {
     scrollToBottom();
   }, [messages]);
 
-  // Load conversations on mount
-  useEffect(() => {
-    if (moduleAccess?.studentId) {
-      loadConversations();
+  const loadConversation = useCallback(async (conversationId) => {
+    try {
+      setCurrentConversationId(conversationId);
+      const response = await apiClient.get(`/api/chat/conversations/${conversationId}`);
+      const conv = response?.data || response;
+      setMessages(conv.messages || []);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
     }
-  }, [moduleAccess]);
+  }, []);
 
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       setLoadingConversations(true);
       const response = await apiClient.get(
@@ -51,18 +56,14 @@ export default function ChatTab({ moduleId, moduleAccess }) {
     } finally {
       setLoadingConversations(false);
     }
-  };
+  }, [moduleAccess, moduleId, currentConversationId, loadConversation]);
 
-  const loadConversation = async (conversationId) => {
-    try {
-      setCurrentConversationId(conversationId);
-      const response = await apiClient.get(`/api/chat/conversations/${conversationId}`);
-      const conv = response?.data || response;
-      setMessages(conv.messages || []);
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
+  // Load conversations on mount
+  useEffect(() => {
+    if (moduleAccess?.studentId) {
+      loadConversations();
     }
-  };
+  }, [moduleAccess, loadConversations]);
 
   const createNewConversation = async (firstMessage) => {
     try {
@@ -168,10 +169,39 @@ export default function ChatTab({ moduleId, moduleAccess }) {
 
   if (loadingConversations) {
     return (
-      <div className="flex items-center justify-center h-[700px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading chat...</p>
+      <div className="h-[700px] flex gap-4">
+        {/* Conversations sidebar skeleton */}
+        <div className="w-80 border-r border-slate-200 dark:border-slate-700 p-4 space-y-3">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                <Skeleton className="h-4 w-3/4 mb-2" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chat area skeleton */}
+        <div className="flex-1 flex flex-col">
+          <div className="border-b border-slate-200 dark:border-slate-700 p-4">
+            <Skeleton className="h-6 w-48 mb-2" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <div className="flex-1 p-4 space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[70%] ${i % 2 === 0 ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-slate-100 dark:bg-slate-800'} rounded-lg p-4`}>
+                  <Skeleton className="h-4 w-full mb-2" />
+                  <Skeleton className="h-4 w-4/5" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-slate-200 dark:border-slate-700 p-4">
+            <Skeleton className="h-12 w-full rounded-lg" />
+          </div>
         </div>
       </div>
     );

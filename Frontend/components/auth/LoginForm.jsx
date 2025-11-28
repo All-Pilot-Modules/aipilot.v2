@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,13 @@ export default function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
 
+  // Prefetch the dashboard page when user starts typing for instant navigation
+  useEffect(() => {
+    if (identifier || password) {
+      router.prefetch('/mymodules');
+    }
+  }, [identifier, password, router]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!identifier || !password) {
@@ -33,16 +40,20 @@ export default function LoginForm() {
     try {
       await login(identifier, password);
 
-      // Use window.location.href for full page reload to ensure fresh auth state
-      // This prevents stale state issues with client-side navigation
-      window.location.href = '/mymodules';
+      // Use Next.js router for faster navigation (no full page reload)
+      router.push('/mymodules');
     } catch (error) {
       console.error('Login error:', error);
 
       // Parse error message for better user experience
       let errorMessage = error.message;
 
-      if (errorMessage.includes('Incorrect credentials')) {
+      // Check if email verification is required
+      if (errorMessage.includes('Email not verified') || errorMessage.includes('403')) {
+        // Redirect to verification page
+        router.push(`/verify-email?email=${encodeURIComponent(identifier)}`);
+        return;
+      } else if (errorMessage.includes('Incorrect credentials')) {
         errorMessage = 'Invalid email/user ID or password. Please check your credentials and try again.';
       } else if (errorMessage.includes('Inactive user')) {
         errorMessage = 'Your account has been deactivated. Please contact support for assistance.';
@@ -80,6 +91,8 @@ export default function LoginForm() {
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'login-error' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -91,11 +104,18 @@ export default function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'login-error' : undefined}
               />
             </div>
             {error && (
-              <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 p-3 rounded-lg">
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div
+                id="login-error"
+                className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 p-3 rounded-lg"
+                role="alert"
+                aria-live="assertive"
+              >
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <span>{error}</span>
               </div>
             )}

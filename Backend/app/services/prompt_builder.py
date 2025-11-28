@@ -105,21 +105,35 @@ def build_mcq_feedback_prompt(
 
     prompt_parts.append("")
 
-    # 6. Output format
+    # 6. Output format with PER-CRITERION SCORING
     rag_settings = rubric.get("rag_settings", {})
     include_doc_locations = rag_settings.get("include_document_locations", True)
 
+    prompt_parts.append("⚠️ CRITICAL: You MUST provide per-criterion scores based on the rubric criteria above.")
     prompt_parts.append("Please provide feedback in this exact JSON format:")
     prompt_parts.append("{")
 
-    # Handle is_correct based on whether we have a correct answer
+    # Build criterion_scores format based on actual rubric criteria
+    if grading_criteria:
+        prompt_parts.append('  "criterion_scores": {')
+        criteria_list = list(grading_criteria.items())
+        for idx, (criterion_name, criterion) in enumerate(criteria_list):
+            weight = criterion.get("weight", 0)
+            comma = "," if idx < len(criteria_list) - 1 else ""
+            prompt_parts.append(f'    "{criterion_name}": {{"score": score_out_of_{weight}, "out_of": {weight}, "reasoning": "Brief explanation for this criterion"}}{comma}')
+        prompt_parts.append('  },')
+    else:
+        # Fallback if no rubric criteria (shouldn't happen but be safe)
+        prompt_parts.append('  "criterion_scores": {},')
+
+    # Handle is_correct and total_percentage based on whether we have a correct answer
     if is_correct is None:
+        prompt_parts.append('  "total_percentage": null,')
         prompt_parts.append('  "is_correct": null,')
-        prompt_parts.append('  "correctness_score": null,')
         prompt_parts.append('  "explanation": "Thoughtful analysis of the student\'s response (no correct answer available to compare)",')
     else:
+        prompt_parts.append('  "total_percentage": calculated_percentage_0_to_100,')
         prompt_parts.append(f'  "is_correct": {str(is_correct).lower()},')
-        prompt_parts.append(f'  "correctness_score": {100 if is_correct else "score_0_to_100"},')
         prompt_parts.append('  "explanation": "Clear explanation of why the answer is correct/incorrect",')
 
     if rag_context and rag_context.get("has_context") and include_doc_locations:
@@ -127,8 +141,11 @@ def build_mcq_feedback_prompt(
     else:
         prompt_parts.append('  "improvement_hint": "Specific guidance for understanding the concept better",')
     prompt_parts.append('  "concept_explanation": "Brief explanation of the key concept being tested",')
-    prompt_parts.append('  "confidence_level": "high/medium/low based on clarity of the question and answer"')
+    prompt_parts.append('  "confidence": "high/medium/low based on clarity of the question and answer"')
     prompt_parts.append("}")
+    prompt_parts.append("")
+    prompt_parts.append("IMPORTANT: Calculate total_percentage as the weighted sum of criterion scores:")
+    prompt_parts.append("total_percentage = sum((criterion_score / criterion_out_of) * criterion_weight for each criterion)")
     prompt_parts.append("")
 
     # 7. Base tone guidance (can be overridden by custom instructions)
@@ -278,20 +295,34 @@ def build_text_feedback_prompt(
             prompt_parts.append(f"- {req}")
         prompt_parts.append("")
 
-    # 7. Output format
+    # 7. Output format with PER-CRITERION SCORING
     rag_settings = rubric.get("rag_settings", {})
     include_doc_locations = rag_settings.get("include_document_locations", True)
 
+    prompt_parts.append("⚠️ CRITICAL: You MUST provide per-criterion scores based on the rubric criteria above.")
     prompt_parts.append("Please provide detailed feedback in this exact JSON format:")
     prompt_parts.append("{")
 
+    # Build criterion_scores format based on actual rubric criteria
+    if grading_criteria:
+        prompt_parts.append('  "criterion_scores": {')
+        criteria_list = list(grading_criteria.items())
+        for idx, (criterion_name, criterion) in enumerate(criteria_list):
+            weight = criterion.get("weight", 0)
+            comma = "," if idx < len(criteria_list) - 1 else ""
+            prompt_parts.append(f'    "{criterion_name}": {{"score": score_out_of_{weight}, "out_of": {weight}, "reasoning": "Brief explanation for this criterion"}}{comma}')
+        prompt_parts.append('  },')
+    else:
+        # Fallback if no rubric criteria
+        prompt_parts.append('  "criterion_scores": {},')
+
     # Adjust correctness fields based on whether we have a reference answer
     if has_reference:
-        prompt_parts.append('  "is_correct": "true/false (true if substantially correct)",')
-        prompt_parts.append('  "correctness_score": "score_from_0_to_100",')
+        prompt_parts.append('  "total_percentage": calculated_percentage_0_to_100,')
+        prompt_parts.append('  "is_correct": true_if_substantially_correct,')
     else:
+        prompt_parts.append('  "total_percentage": null,  // No reference answer available to score')
         prompt_parts.append('  "is_correct": null,  // No reference answer available to determine correctness')
-        prompt_parts.append('  "correctness_score": null,  // No reference answer available to score')
 
     prompt_parts.append('  "explanation": "Detailed analysis of the student\'s response",')
     prompt_parts.append('  "strengths": ["What the student got right - array of strings"],')
@@ -302,8 +333,11 @@ def build_text_feedback_prompt(
         prompt_parts.append('  "improvement_hint": "Specific guidance for better understanding",')
     prompt_parts.append('  "concept_explanation": "Brief explanation of key concepts",')
     prompt_parts.append('  "missing_concepts": ["Important concepts not addressed - array of strings"],')
-    prompt_parts.append('  "confidence_level": "high/medium/low based on answer quality"')
+    prompt_parts.append('  "confidence": "high/medium/low based on answer quality"')
     prompt_parts.append("}")
+    prompt_parts.append("")
+    prompt_parts.append("IMPORTANT: Calculate total_percentage as the weighted sum of criterion scores:")
+    prompt_parts.append("total_percentage = sum((criterion_score / criterion_out_of) * criterion_weight for each criterion)")
     prompt_parts.append("")
 
     # 8. Base tone guidance (can be overridden by custom instructions)

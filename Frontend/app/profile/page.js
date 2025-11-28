@@ -5,55 +5,199 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AppSidebar } from "@/components/app-sidebar";
-import { SiteHeader } from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Mail, Shield, Calendar, Save, Edit3, Camera } from "lucide-react";
+import { User, Mail, Shield, Calendar, Save, Edit3, Camera, CheckCircle, AlertCircle, Loader2, ArrowLeft, Settings as SettingsIcon, Home } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { apiClient } from "@/lib/auth";
 
 export default function ProfilePage() {
-  const { user, loading, isAuthenticated } = useAuth();
+  const { user, loading, isAuthenticated, updateUser } = useAuth();
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    username: user?.username || '',
-    email: user?.email || '',
+    username: '',
+    email: '',
   });
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Update form data when user data loads
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        username: user.username || '',
+        email: user.email || '',
+      });
+    }
+  }, [user]);
 
   if (loading) {
-    return <div className="p-8">Loading...</div>;
-  }
-
-  if (!isAuthenticated) {
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl mb-4">Access Denied</h1>
-        <Button asChild>
-          <Link href="/sign-in">Sign In</Link>
-        </Button>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
   }
 
-  const handleSave = () => {
-    // TODO: Implement profile update API call
-    console.log('Saving profile:', formData);
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-8 text-center">
+            <h1 className="text-xl mb-4">Access Denied</h1>
+            <p className="text-muted-foreground mb-4">Please sign in to access your profile</p>
+            <Button asChild>
+              <Link href="/sign-in">Sign In</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const handleSave = async () => {
+    if (!formData.username.trim() || !formData.email.trim()) {
+      setError('Username and email are required');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      // Call API to update user profile
+      const response = await apiClient.put(`/api/users/${user.id}`, {
+        username: formData.username.trim(),
+        email: formData.email.trim(),
+      });
+
+      // Update the user in auth context
+      if (updateUser) {
+        updateUser(response);
+      }
+
+      setSuccess(true);
+      setIsEditing(false);
+
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      setError(err.response?.data?.detail || 'Failed to update profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    // Reset form to original user data
+    setFormData({
+      username: user?.username || '',
+      email: user?.email || '',
+    });
     setIsEditing(false);
+    setError(null);
   };
 
   return (
-    <SidebarProvider
-      style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
-        "--header-height": "calc(var(--spacing) * 12)"
-      }}
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="min-h-screen bg-background">
-          <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      {/* Top Navigation Bar */}
+      <div className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/')}
+                className="gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Home
+              </Button>
+              <Separator orientation="vertical" className="h-6" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold">Profile</h1>
+                  <p className="text-xs text-muted-foreground">Manage your personal information</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/settings')}
+                className="gap-2"
+              >
+                <SettingsIcon className="w-4 h-4" />
+                Settings
+              </Button>
+              <Separator orientation="vertical" className="h-6" />
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9 ring-2 ring-indigo-100 dark:ring-indigo-900/50">
+                  <AvatarImage src={user?.profile_image} alt={user?.username} />
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold text-sm">
+                    {user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden sm:block">
+                  <p className="text-sm font-semibold">{user?.username || 'User'}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        <div className="space-y-6">
+            {/* Success Message */}
+            {success && (
+              <div className="mb-6 relative overflow-hidden rounded-2xl animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 opacity-90"></div>
+                <div className="relative p-4 text-white">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">Profile Updated Successfully!</p>
+                      <p className="text-sm text-white/90">Your changes have been saved.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 relative overflow-hidden rounded-2xl animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="absolute inset-0 bg-gradient-to-r from-red-500 via-rose-500 to-red-500 opacity-90"></div>
+                <div className="relative p-4 text-white">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center">
+                      <AlertCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">Error Updating Profile</p>
+                      <p className="text-sm text-white/90">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Header */}
             <div className="mb-8 relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 dark:from-blue-500/5 dark:via-purple-500/5 dark:to-pink-500/5 rounded-2xl"></div>
@@ -159,12 +303,21 @@ export default function ProfilePage() {
 
                   {isEditing && (
                     <div className="flex justify-end gap-3 pt-4">
-                      <Button variant="outline" onClick={() => setIsEditing(false)}>
+                      <Button variant="outline" onClick={handleCancel} disabled={saving}>
                         Cancel
                       </Button>
-                      <Button onClick={handleSave}>
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Changes
+                      <Button onClick={handleSave} disabled={saving}>
+                        {saving ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4 mr-2" />
+                            Save Changes
+                          </>
+                        )}
                       </Button>
                     </div>
                   )}
@@ -210,9 +363,8 @@ export default function ProfilePage() {
                 </Card>
               </div>
             </div>
-          </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </div>
   );
 }

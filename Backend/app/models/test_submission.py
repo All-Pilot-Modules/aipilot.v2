@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Index, UniqueConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Index, UniqueConstraint, Float
 from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 import uuid
@@ -23,6 +23,11 @@ class TestSubmission(Base):
     # Submission metadata
     submitted_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     questions_count = Column(Integer, nullable=False)  # How many questions were submitted
+
+    # Score tracking
+    total_points_possible = Column(Float, nullable=True)  # Total points available in test
+    total_points_earned = Column(Float, nullable=True)    # Total points student earned
+    percentage_score = Column(Float, nullable=True)       # Percentage (0-100)
 
     # Ensure one submission per student per module per attempt
     __table_args__ = (

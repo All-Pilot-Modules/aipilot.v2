@@ -91,14 +91,33 @@ def merge_with_defaults(custom_rubric: Dict[str, Any]) -> Dict[str, Any]:
                 **base.get("question_type_settings", {}).get("mcq", {}),
                 **custom_rubric["question_type_settings"].get("mcq", {})
             },
-            "short_answer": {
-                **base.get("question_type_settings", {}).get("short_answer", {}),
-                **custom_rubric["question_type_settings"].get("short_answer", {})
+            "short": {
+                **base.get("question_type_settings", {}).get("short", {}),
+                **custom_rubric["question_type_settings"].get("short", {})
             },
-            "essay": {
-                **base.get("question_type_settings", {}).get("essay", {}),
-                **custom_rubric["question_type_settings"].get("essay", {})
+            "long": {
+                **base.get("question_type_settings", {}).get("long", {}),
+                **custom_rubric["question_type_settings"].get("long", {})
+            },
+            "mcq_multiple": {
+                **base.get("question_type_settings", {}).get("mcq_multiple", {}),
+                **custom_rubric["question_type_settings"].get("mcq_multiple", {})
+            },
+            "fill_blank": {
+                **base.get("question_type_settings", {}).get("fill_blank", {}),
+                **custom_rubric["question_type_settings"].get("fill_blank", {})
+            },
+            "multi_part": {
+                **base.get("question_type_settings", {}).get("multi_part", {}),
+                **custom_rubric["question_type_settings"].get("multi_part", {})
             }
+        }
+
+    # Merge grading thresholds
+    if "grading_thresholds" in custom_rubric:
+        merged["grading_thresholds"] = {
+            **base.get("grading_thresholds", {}),
+            **custom_rubric["grading_thresholds"]
         }
 
     # Override top-level fields
@@ -288,6 +307,22 @@ def validate_rubric(rubric: Dict[str, Any]) -> List[str]:
                 errors.append("Max context chunks must be an integer")
             elif chunks < 1 or chunks > 10:
                 errors.append("Max context chunks must be between 1 and 10")
+
+    # Validate grading thresholds
+    if "grading_thresholds" in rubric:
+        thresholds = rubric["grading_thresholds"]
+
+        if "passing_score" in thresholds:
+            passing_score = thresholds["passing_score"]
+            if not isinstance(passing_score, (int, float)):
+                errors.append("Passing score must be a number")
+            elif passing_score < 0 or passing_score > 100:
+                errors.append("Passing score must be between 0 and 100")
+
+        if "partial_credit" in thresholds:
+            partial_credit = thresholds["partial_credit"]
+            if not isinstance(partial_credit, bool):
+                errors.append("Partial credit must be a boolean value")
 
     return errors
 

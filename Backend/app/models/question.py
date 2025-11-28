@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Text, Index, TIMESTAMP
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Text, Index, TIMESTAMP, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.database import Base
 import uuid
@@ -10,6 +10,16 @@ class QuestionStatus:
     UNREVIEWED = "unreviewed"  # AI-generated, pending teacher review
     ACTIVE = "active"          # Approved by teacher, visible to students
     ARCHIVED = "archived"      # Hidden but not deleted
+
+
+class QuestionType:
+    """Question type constants"""
+    MCQ = "mcq"                    # Single correct answer MCQ
+    SHORT = "short"                # Short answer (1-2 sentences)
+    LONG = "long"                  # Long answer (essay)
+    MCQ_MULTIPLE = "mcq_multiple"  # Multiple correct answers MCQ
+    FILL_BLANK = "fill_blank"      # Fill in the blanks
+    MULTI_PART = "multi_part"      # Multi-part questions (1a, 1b, 1c)
 
 
 class Question(Base):
@@ -28,11 +38,20 @@ class Question(Base):
     correct_answer = Column(String, nullable=True)  # Legacy field - kept for backward compatibility
     correct_option_id = Column(String, nullable=True)  # New field - stores "A", "B", "C", "D" for MCQs
 
+    # Extended configuration for new question types
+    extended_config = Column(JSONB, nullable=True)
+    # For mcq_multiple: {"correct_option_ids": ["A", "B"], "partial_credit": true}
+    # For fill_blank: {"blanks": [{"position": 0, "correct_answers": ["answer1", "answer2"], "points": 5}]}
+    # For multi_part: {"sub_questions": [{"id": "1a", "type": "mcq", "text": "...", "options": {...}, ...}]}
+
     learning_outcome = Column(String, nullable=True)
     bloom_taxonomy = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
 
     has_text_input = Column(Boolean, default=False)
+
+    # Points for this question
+    points = Column(Float, default=1.0, nullable=False)
 
     # AI Generation and Review Workflow Fields
     status = Column(String, default=QuestionStatus.ACTIVE, nullable=False)

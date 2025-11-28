@@ -2,6 +2,7 @@
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
@@ -26,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, Settings, User, ChevronDown, LayoutDashboard, FolderOpen, HelpCircle, Users, Search, BookOpen } from "lucide-react";
+import { LogOut, Settings, User, ChevronDown, LayoutDashboard, FolderOpen, HelpCircle, Users, BookOpen, ClipboardCheck, Sparkles, Shield, Brain, FileText, BarChart3, LifeBuoy } from "lucide-react";
 import { apiClient } from "@/lib/auth";
 
 export function AppSidebar(props) {
@@ -49,6 +50,7 @@ export function AppSidebar(props) {
   const { user, logout } = useAuth();
   const [modules, setModules] = useState([]);
   const [loadingModules, setLoadingModules] = useState(false);
+  const [currentModuleId, setCurrentModuleId] = useState(null);
 
   const fetchModules = useCallback(async () => {
     if (!user?.id) return;
@@ -68,6 +70,16 @@ export function AppSidebar(props) {
   useEffect(() => {
     fetchModules();
   }, [fetchModules]);
+
+  // Update current module ID when module name changes
+  useEffect(() => {
+    if (module && modules.length > 0) {
+      const foundModule = modules.find(m => m.name === module);
+      if (foundModule) {
+        setCurrentModuleId(foundModule.id);
+      }
+    }
+  }, [module, modules]);
 
   const handleModuleSwitch = (moduleName) => {
     // Keep the same page but change the module parameter
@@ -98,48 +110,60 @@ export function AppSidebar(props) {
       icon: HelpCircle,
     },
     {
+      title: "Grading",
+      url: `/dashboard/grading?module=${module}`,
+      icon: ClipboardCheck,
+    },
+    {
       title: "Students",
       url: `/dashboard/students?module=${module}`,
       icon: Users,
     },
   ];
 
-  const navSecondary = [
-    { title: "Settings", url: `/dashboard/settings?module=${module}`, icon: Settings },
-    { title: "Search", url: `/dashboard/search?module=${module}`, icon: Search },
+  const bottomNav = [
+    {
+      title: "Help",
+      url: `/help`,
+      icon: LifeBuoy,
+    },
   ];
 
+
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader className="p-6">
-        <div
-          className="flex items-center gap-3 mb-6 cursor-pointer hover:opacity-80 transition-opacity"
-          onClick={() => router.push('/')}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') router.push('/'); }}
-        >
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-lg">AP</span>
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader className="p-4 pb-2 group-data-[collapsible=icon]:p-2">
+        <div className="flex items-center justify-center mb-3 group-data-[collapsible=icon]:mb-2">
+          <div
+            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => router.push('/')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') router.push('/'); }}
+            aria-label="Go to homepage"
+          >
+            <div className="w-10 h-10 bg-emerald-700 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
+              <span className="text-white font-bold text-lg">AP</span>
+            </div>
+            <span className="text-xl font-bold text-foreground tracking-tight group-data-[collapsible=icon]:hidden">AI Pilot</span>
           </div>
-          <span className="text-xl font-bold text-foreground">AI Pilot</span>
         </div>
 
-        {/* Module Selector */}
+        {/* Module Selector - Hidden when collapsed */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <div className="bg-sidebar-accent/50 dark:bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-sidebar-accent/70 dark:hover:bg-gray-800/70 transition-colors">
+            <div className="bg-gray-100 dark:bg-gray-800/50 rounded-lg p-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800/70 transition-all duration-200 border border-gray-200 dark:border-gray-700 group-data-[collapsible=icon]:hidden">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded flex items-center justify-center flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-9 h-9 bg-emerald-700 dark:bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
                     <BookOpen className="w-4 h-4 text-white" />
                   </div>
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs text-muted-foreground">Module</span>
-                    <span className="text-sm font-semibold text-foreground truncate capitalize">{module || 'Select module'}</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider">Module</span>
+                    <span className="text-sm font-bold text-foreground truncate capitalize">{module || 'Select module'}</span>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
               </div>
             </div>
           </DropdownMenuTrigger>
@@ -158,12 +182,12 @@ export function AppSidebar(props) {
                   className="cursor-pointer"
                 >
                   <div className="flex items-center gap-2 w-full">
-                    <div className="w-6 h-6 bg-blue-600 dark:bg-blue-500 rounded flex items-center justify-center flex-shrink-0">
+                    <div className="w-6 h-6 bg-emerald-700 dark:bg-emerald-500 rounded flex items-center justify-center flex-shrink-0">
                       <span className="text-white text-xs font-semibold">{mod.name?.charAt(0)?.toUpperCase() || 'M'}</span>
                     </div>
                     <span className="capitalize truncate flex-1">{mod.name}</span>
                     {module === mod.name && (
-                      <span className="text-blue-600 dark:text-blue-400">✓</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">✓</span>
                     )}
                   </div>
                 </DropdownMenuItem>
@@ -176,7 +200,7 @@ export function AppSidebar(props) {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => router.push('/mymodules')}
-              className="cursor-pointer text-blue-600 dark:text-blue-400"
+              className="cursor-pointer text-emerald-600 dark:text-emerald-400 font-medium"
             >
               <span>View all modules</span>
             </DropdownMenuItem>
@@ -184,23 +208,26 @@ export function AppSidebar(props) {
         </DropdownMenu>
       </SidebarHeader>
 
-      <SidebarContent className="px-3">
+      <SidebarContent className="px-2">
         {/* Main Navigation */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Menu
+        <SidebarGroup className="mb-2">
+          <SidebarGroupLabel className="px-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 group-data-[collapsible=icon]:hidden">
+            MENU
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
+            <SidebarMenu className="space-y-0.5">
               {navMain.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
-                    onClick={() => router.push(item.url)}
+                    asChild
                     isActive={isActive(item.url)}
-                    className="h-10"
+                    tooltip={item.title}
+                    className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
                   >
-                    <item.icon className="w-5 h-5" />
-                    <span className="font-medium">{item.title}</span>
+                    <Link href={item.url} onClick={(e) => e.stopPropagation()}>
+                      <item.icon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -208,19 +235,98 @@ export function AppSidebar(props) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Secondary Navigation */}
-        <SidebarGroup className="mt-auto">
+        {/* Module Settings - Always Open */}
+        <SidebarGroup className="mb-2">
+          <SidebarGroupLabel className="px-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 group-data-[collapsible=icon]:hidden">
+            MODULE SETTINGS
+          </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
-              {navSecondary.map((item) => (
+            <SidebarMenu className="space-y-0.5">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.includes('/rubric')}
+                  tooltip="AI Feedback Rubric"
+                  className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                >
+                  <Link href={`/dashboard/rubric?module=${module}`} onClick={(e) => e.stopPropagation()}>
+                    <Sparkles className="w-4 h-4" />
+                    <span className="text-sm font-medium">AI Feedback Rubric</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.includes('/chatbot-settings')}
+                  tooltip="AI Chatbot Settings"
+                  className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                >
+                  <Link href={`/dashboard/chatbot-settings?module=${module}`} onClick={(e) => e.stopPropagation()}>
+                    <Brain className="w-5 h-5" />
+                    <span className="font-medium">AI Chatbot Settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.includes('/survey')}
+                  tooltip="Survey Settings"
+                  className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                >
+                  <Link href={`/dashboard/survey?module=${module}`} onClick={(e) => e.stopPropagation()}>
+                    <FileText className="w-5 h-5" />
+                    <span className="font-medium">Survey Settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.includes('/consent')}
+                  tooltip="Consent Form"
+                  className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                >
+                  <Link href={`/module/${currentModuleId || module}/consent`} onClick={(e) => e.stopPropagation()}>
+                    <Shield className="w-5 h-5" />
+                    <span className="font-medium">Consent Form</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.includes('/dashboard/settings')}
+                  tooltip="Settings"
+                  className="h-11 px-3 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                >
+                  <Link href={`/dashboard/settings?module=${module}`} onClick={(e) => e.stopPropagation()}>
+                    <Settings className="w-5 h-5" />
+                    <span className="font-medium">Settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Help Section */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu className="space-y-0.5">
+              {bottomNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
-                    onClick={() => router.push(item.url)}
+                    asChild
                     isActive={isActive(item.url)}
-                    className="h-10"
+                    tooltip={item.title}
+                    className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
                   >
-                    <item.icon className="w-5 h-5" />
-                    <span className="font-medium">{item.title}</span>
+                    <Link href={item.url} onClick={(e) => e.stopPropagation()}>
+                      <item.icon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -229,23 +335,23 @@ export function AppSidebar(props) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-sidebar-border">
+      <SidebarFooter className="p-2 border-t border-gray-200 dark:border-gray-700">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent cursor-pointer transition-colors">
-              <Avatar className="h-9 w-9">
+            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800/50 cursor-pointer transition-all duration-200 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2">
+              <Avatar className="h-9 w-9 border-2 border-emerald-700">
                 <AvatarImage src={user?.profile_image} alt={user?.username} />
-                <AvatarFallback className="bg-blue-600 text-white font-semibold text-sm">
+                <AvatarFallback className="bg-emerald-700 text-white font-semibold text-sm">
                   {user?.username?.charAt(0)?.toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex flex-col min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground truncate">{user?.username || 'User'}</p>
-                <p className="text-xs text-muted-foreground capitalize truncate">
+              <div className="flex flex-col min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                <p className="text-sm font-semibold text-foreground truncate">{user?.username || 'User'}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                   {user?.email || user?.role || 'Teacher'}
                 </p>
               </div>
-              <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

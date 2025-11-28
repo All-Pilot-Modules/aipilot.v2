@@ -119,6 +119,23 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Enhanced focus indicators for accessibility */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible,
+  [role="button"]:focus-visible,
+  [role="link"]:focus-visible {
+    @apply outline-2 outline-offset-2 outline-blue-600 dark:outline-blue-400;
+  }
+
+  /* Ensure focus is never hidden */
+  *:focus-visible {
+    outline-style: solid !important;
+  }
 }
 
 @layer utilities {
@@ -131,5 +148,108 @@
   .scrollbar-hide {
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Mobile-first responsive utilities */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Mobile-friendly table wrapper */
+  .table-responsive {
+    @apply overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0;
+  }
+
+  /* Mobile text utilities */
+  .text-mobile-sm {
+    @apply text-xs sm:text-sm;
+  }
+
+  .text-mobile-base {
+    @apply text-sm sm:text-base;
+  }
+
+  .text-mobile-lg {
+    @apply text-base sm:text-lg;
+  }
+
+  .text-mobile-xl {
+    @apply text-lg sm:text-xl;
+  }
+
+  .text-mobile-2xl {
+    @apply text-xl sm:text-2xl;
+  }
+
+  .text-mobile-3xl {
+    @apply text-2xl sm:text-3xl;
+  }
+
+  /* Mobile padding utilities */
+  .p-mobile {
+    @apply p-4 md:p-6 lg:p-8;
+  }
+
+  .px-mobile {
+    @apply px-4 md:px-6 lg:px-8;
+  }
+
+  .py-mobile {
+    @apply py-4 md:py-6 lg:py-8;
+  }
+}
+
+/* Prevent sidebar from auto-expanding on interaction when collapsed */
+@layer components {
+  [data-state="collapsed"][data-collapsible="icon"] {
+    pointer-events: auto !important;
+  }
+
+  [data-state="collapsed"][data-collapsible="icon"] [data-sidebar="sidebar"] {
+    pointer-events: auto !important;
+  }
+
+  [data-state="collapsed"][data-collapsible="icon"] a,
+  [data-state="collapsed"][data-collapsible="icon"] button {
+    pointer-events: auto !important;
+  }
+}
+
+/* Performance optimized animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
 }

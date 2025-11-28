@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, TIMESTAMP, Index, Text
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, TIMESTAMP, Index, Text, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.database import Base
 import uuid
@@ -15,6 +15,16 @@ class AIFeedback(Base):
     # Correctness (nullable to allow feedback without correct answer)
     is_correct = Column(Boolean, nullable=True)  # None when correct answer not set
     score = Column(Integer, nullable=True)  # 0-100, None when correct answer not set
+
+    # Points tracking (for point-based grading)
+    points_earned = Column(Float, nullable=True)     # Actual points earned (e.g., 7.5 out of 10)
+    points_possible = Column(Float, nullable=True)   # Max points for this question
+
+    # Rubric-based scoring
+    criterion_scores = Column(JSONB, nullable=True)  # Per-criterion breakdown
+    # Format: {"accuracy": {"score": 34, "out_of": 40, "reasoning": "..."}, ...}
+
+    confidence_level = Column(String(20), nullable=True)  # "high", "medium", "low"
 
     # Feedback content (stored as JSONB for flexibility)
     feedback_data = Column(JSONB, nullable=False)  # Contains explanation, hints, strengths, weaknesses, etc.

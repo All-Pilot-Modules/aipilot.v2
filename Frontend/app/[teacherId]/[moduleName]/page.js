@@ -36,8 +36,14 @@ export default function ModuleAccessPage() {
   // No initial module loading needed - we'll get module info after access code verification
 
   const handleConsentSubmitted = (consentStatus) => {
-    // Mark consent as submitted in sessionStorage
+    // Mark consent as submitted in both localStorage and sessionStorage
     if (enrolledModule) {
+      // Store in localStorage (persists across sessions)
+      const consentKey = `consent_${enrolledModule.id}_${studentId.trim()}`;
+      localStorage.setItem(consentKey, 'true');
+      console.log('✅ Consent saved to localStorage');
+
+      // Also update sessionStorage
       const accessData = JSON.parse(sessionStorage.getItem('student_module_access') || '{}');
       accessData.consentSubmitted = true;
       accessData.consentStatus = consentStatus;

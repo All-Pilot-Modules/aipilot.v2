@@ -118,7 +118,32 @@ class AIFeedbackService:
                     rubric=rubric,
                     rag_context=rag_context
                 )
+            elif question.type == 'fill_blank':
+                feedback = self._analyze_fill_blank_answer(
+                    student_answer=student_answer.answer,
+                    question=question,
+                    ai_model=ai_model,
+                    rubric=rubric,
+                    rag_context=rag_context
+                )
+            elif question.type == 'mcq_multiple':
+                feedback = self._analyze_mcq_multiple_answer(
+                    student_answer=student_answer.answer,
+                    question=question,
+                    ai_model=ai_model,
+                    rubric=rubric,
+                    rag_context=rag_context
+                )
+            elif question.type == 'multi_part':
+                feedback = self._analyze_multi_part_answer(
+                    student_answer=student_answer.answer,
+                    question=question,
+                    ai_model=ai_model,
+                    rubric=rubric,
+                    rag_context=rag_context
+                )
             else:
+                # Default to text answer for short/long types
                 feedback = self._analyze_text_answer(
                     student_answer=student_answer_text,
                     question=question,
@@ -153,7 +178,11 @@ class AIFeedbackService:
                     answer_id=student_answer.id,
                     is_correct=feedback.get("is_correct"),  # Allow None when no correct answer
                     score=feedback.get("correctness_score"),  # Allow None when no correct answer
-                    feedback_data=feedback_data
+                    feedback_data=feedback_data,
+                    points_earned=feedback.get("points_earned"),
+                    points_possible=feedback.get("points_possible"),
+                    criterion_scores=feedback.get("criterion_scores"),
+                    confidence_level=feedback.get("confidence_level")
                 )
 
                 db_feedback = create_feedback(db, feedback_create)
@@ -302,19 +331,39 @@ class AIFeedbackService:
 
             feedback = json.loads(feedback_text)
 
+            # For MCQ, score is binary: correct=100% or incorrect=0%
+            # Don't use rubric-based criterion scores for MCQ
+            if is_correct is None:
+                # No correct answer set
+                correctness_score = None
+                points_earned = 0
+            else:
+                correctness_score = 100 if is_correct else 0
+                points_earned = (correctness_score / 100.0) * question.points
+
+            confidence = feedback.get('confidence', 'medium')
+
             # Add MCQ-specific metadata
             feedback.update({
                 "feedback_type": "mcq",
                 "selected_option": student_answer,
                 "correct_option": correct_answer,
-                "available_options": options
+                "available_options": options,
+                # Points tracking (no rubric for MCQ)
+                "points_earned": round(points_earned, 2) if points_earned else None,
+                "points_possible": question.points,
+                "criterion_scores": {},  # MCQ uses binary grading, not rubric
+                "confidence_level": confidence,
+                "correctness_score": correctness_score
             })
 
             # 🎯 LOG: Parsed feedback
             logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             logger.info("💾 PARSED FEEDBACK DATA:")
             logger.info(f"   ✓ is_correct: {feedback.get('is_correct')}")
-            logger.info(f"   ✓ correctness_score: {feedback.get('correctness_score')}")
+            logger.info(f"   ✓ correctness_score: {correctness_score}%")
+            logger.info(f"   ✓ points_earned: {points_earned:.2f if points_earned else 0} / {question.points}")
+            logger.info(f"   ✓ confidence: {confidence}")
             logger.info(f"   ✓ explanation: {feedback.get('explanation', '')[:100]}...")
             logger.info(f"   ✓ improvement_hint: {feedback.get('improvement_hint', '')[:100]}...")
             logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -323,10 +372,10 @@ class AIFeedbackService:
 
         except json.JSONDecodeError as je:
             logger.error(f"JSON decode error: {str(je)}, Response: {feedback_text}")
-            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct)
+            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
         except Exception as e:
             logger.error(f"OpenAI API error: {str(e)}")
-            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct)
+            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
     
     def _analyze_text_answer(
         self,
@@ -398,18 +447,41 @@ class AIFeedbackService:
 
             feedback = json.loads(feedback_text)
 
-            # Add text-specific metadata
+            # ⭐ NEW: Extract criterion scores and calculate points
+            criterion_scores = feedback.get('criterion_scores', {})
+            total_percentage = feedback.get('total_percentage')
+            confidence = feedback.get('confidence', 'medium')
+
+            # Calculate points from percentage
+            if total_percentage is not None:
+                points_earned = (total_percentage / 100.0) * question.points
+            else:
+                # Fallback to old correctness_score if total_percentage not provided
+                correctness_score = feedback.get('correctness_score', 0)
+                points_earned = (correctness_score / 100.0) * question.points if correctness_score is not None else 0
+                total_percentage = correctness_score
+
+            # Add text-specific metadata + points tracking
             feedback.update({
                 "feedback_type": question.type,
                 "answer_length": len(student_answer),
-                "reference_answer": correct_answer
+                "reference_answer": correct_answer,
+                # Points and rubric tracking
+                "points_earned": round(points_earned, 2),
+                "points_possible": question.points,
+                "criterion_scores": criterion_scores,
+                "confidence_level": confidence,
+                "correctness_score": int(total_percentage) if total_percentage is not None else None
             })
 
             # 🎯 LOG: Parsed feedback
             logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             logger.info("💾 PARSED FEEDBACK DATA:")
             logger.info(f"   ✓ is_correct: {feedback.get('is_correct')}")
-            logger.info(f"   ✓ correctness_score: {feedback.get('correctness_score')}")
+            logger.info(f"   ✓ total_percentage: {total_percentage}%")
+            logger.info(f"   ✓ points_earned: {points_earned:.2f} / {question.points}")
+            logger.info(f"   ✓ confidence: {confidence}")
+            logger.info(f"   ✓ criterion_scores: {len(criterion_scores)} criteria")
             logger.info(f"   ✓ strengths: {len(feedback.get('strengths', []))} items")
             logger.info(f"   ✓ weaknesses: {len(feedback.get('weaknesses', []))} items")
             logger.info(f"   ✓ explanation: {feedback.get('explanation', '')[:100]}...")
@@ -419,10 +491,10 @@ class AIFeedbackService:
 
         except json.JSONDecodeError as je:
             logger.error(f"JSON decode error: {str(je)}, Response: {feedback_text}")
-            return self._fallback_text_feedback(student_answer, correct_answer, question.type)
+            return self._fallback_text_feedback(student_answer, correct_answer, question.type, question.points)
         except Exception as e:
             logger.error(f"OpenAI API error: {str(e)}")
-            return self._fallback_text_feedback(student_answer, correct_answer, question.type)
+            return self._fallback_text_feedback(student_answer, correct_answer, question.type, question.points)
     
     def _format_options(self, options: Dict[str, str]) -> str:
         """Format MCQ options for prompt"""
@@ -436,21 +508,29 @@ class AIFeedbackService:
         student_answer: str,
         correct_answer: str,
         options: Dict[str, str],
-        is_correct: bool
+        is_correct: bool,
+        question_points: float = 1.0
     ) -> Dict[str, Any]:
         """Fallback feedback when AI fails"""
         # Get the correct option text for better feedback
         correct_option_text = options.get(correct_answer, correct_answer) if options else correct_answer
         correct_display = f"{correct_answer} ({correct_option_text})" if options else correct_answer
 
+        # Calculate points
+        correctness_score = 100 if is_correct else 0
+        points_earned = (correctness_score / 100.0) * question_points
+
         return {
             "is_correct": is_correct,
-            "correctness_score": 100 if is_correct else 0,
+            "correctness_score": correctness_score,
+            "points_earned": round(points_earned, 2),
+            "points_possible": question_points,
+            "criterion_scores": {},  # Empty for fallback
+            "confidence_level": "low",  # Fallback has low confidence
             "feedback_type": "mcq",
             "explanation": f"Your answer is {'correct' if is_correct else 'incorrect'}. The correct answer is {correct_display}.",
             "improvement_hint": "Review the question and consider the key concepts being tested." if not is_correct else "Well done!",
             "concept_explanation": "Please review the related course material.",
-            "confidence_level": "medium",
             "selected_option": student_answer,
             "correct_option": correct_answer,
             "available_options": options,
@@ -458,15 +538,24 @@ class AIFeedbackService:
         }
     
     def _fallback_text_feedback(
-        self, 
-        student_answer: str, 
-        correct_answer: str, 
-        question_type: str
+        self,
+        student_answer: str,
+        correct_answer: str,
+        question_type: str,
+        question_points: float = 1.0
     ) -> Dict[str, Any]:
         """Fallback feedback for text answers when AI fails"""
+        # Neutral score when AI unavailable
+        correctness_score = 50
+        points_earned = (correctness_score / 100.0) * question_points
+
         return {
             "is_correct": len(student_answer.strip()) > 0,
-            "correctness_score": 50,  # Neutral score when AI unavailable
+            "correctness_score": correctness_score,
+            "points_earned": round(points_earned, 2),
+            "points_possible": question_points,
+            "criterion_scores": {},  # Empty for fallback
+            "confidence_level": "low",  # Fallback has low confidence
             "feedback_type": question_type,
             "explanation": "Your answer has been submitted. Please compare with the reference answer.",
             "strengths": ["Answer provided"],
@@ -474,7 +563,6 @@ class AIFeedbackService:
             "improvement_hint": "Review the reference answer and course materials.",
             "concept_explanation": "Please refer to course materials for concept review.",
             "missing_concepts": [],
-            "confidence_level": "low",
             "reference_answer": correct_answer,
             "fallback": True
         }
@@ -491,6 +579,616 @@ class AIFeedbackService:
             "improvement_hint": "Please try again or contact support.",
             "confidence_level": "low"
         }
+
+    def _analyze_fill_blank_answer(
+        self,
+        student_answer: Dict[str, Any],
+        question: Question,
+        ai_model: str,
+        rubric: Dict[str, Any],
+        rag_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Analyze fill-in-the-blank question answer with AI semantic matching"""
+        from app.services.question_grading import QuestionGradingService
+
+        # Get extended config with blank configurations
+        extended_config = question.extended_config or {}
+        blank_configs = extended_config.get('blanks', [])
+
+        if not blank_configs:
+            logger.error(f"Fill-blank question {question.id} has no blank configurations")
+            return self._error_response("Question configuration error")
+
+        # Extract student answers from answer data
+        # Format: {"blanks": {0: "answer1", 1: "answer2", ...}}
+        student_blanks = student_answer.get('blanks', {})
+
+        # Convert string keys to int if needed
+        student_blanks_int = {}
+        for key, value in student_blanks.items():
+            student_blanks_int[int(key)] = value
+
+        # Grade using the grading service
+        grading_service = QuestionGradingService()
+        grading_result = grading_service.grade_fill_blank(
+            student_answers=student_blanks_int,
+            blank_configs=blank_configs,
+            use_ai_semantic_matching=True
+        )
+
+        # Generate AI feedback based on grading result
+        # Format for AI's internal use (includes accepted answers)
+        blank_results_internal = "\n".join([
+            f"Blank {r['position']}: '{r['student_answer']}' - {'✓ Correct' if r['is_correct'] else '✗ Incorrect'} " +
+            f"[INTERNAL - Accepted: {', '.join(r['accepted_answers'])}]" +
+            (f" [AI semantic match]" if r.get('semantic_match') else "")
+            for r in grading_result['blank_results']
+        ])
+
+        # Count statistics for student-facing feedback
+        num_correct = sum(1 for r in grading_result['blank_results'] if r['is_correct'])
+        num_incorrect = len(grading_result['blank_results']) - num_correct
+
+        prompt = f"""You are an educational AI providing feedback on a fill-in-the-blank answer.
+
+Question: {question.text}
+
+Grading Results (INTERNAL - For AI analysis only):
+{blank_results_internal}
+
+Score: {grading_result['earned_points']}/{grading_result['total_points']} ({grading_result['percentage']:.1f}%)
+Correct blanks: {num_correct}, Incorrect blanks: {num_incorrect}
+
+⚠️ CRITICAL INSTRUCTION: NEVER reveal the accepted/correct answers for any blank in your feedback. DO NOT tell the student what the correct answer should be. Instead:
+
+1. **Analyze the question content**: Understand what topic/concept this question is testing
+2. **Provide contextual feedback**: Give feedback specific to THIS question's subject matter and context
+3. **Explain relevant concepts**: Help the student understand the principles, terminology, or knowledge needed for THIS specific question
+4. **Give meaningful hints**: Provide guidance about grammar, meaning, technical terms, or context clues that are relevant to THIS particular sentence/paragraph
+5. **Be detailed and specific**: Don't give generic advice - make it relevant to the actual content and topic of the question
+
+Your goal is to help students LEARN and DISCOVER the correct answers through understanding the concepts and context, not to give generic advice or reveal answers.
+
+IMPORTANT: Your feedback should clearly show that you understand what this question is about and what topic it covers. Reference the specific subject matter.
+
+Provide constructive, DETAILED, and CONTEXTUAL feedback in JSON format:
+{{
+    "explanation": "Detailed analysis of their performance. Start by explaining how many blanks they filled correctly (e.g., 'You correctly filled X out of Y blanks'). Then provide insight into what this question is testing - what topic or concept is it about? Why is this knowledge important? Be specific to THIS question's content and subject matter.",
+
+    "improvement_hint": "Specific, contextual guidance related to THIS question's topic. Don't just say 'review the context' - instead, help them understand what type of knowledge or concepts they need for these specific blanks. For example: 'Consider the technical terminology related to [topic]' or 'Think about the grammatical structure needed here - this sentence is describing [concept]'. Reference the actual subject matter.",
+
+    "concept_explanation": "Explain the key concept, topic, or knowledge domain that THIS specific question is testing. What should students understand about [this topic] to fill in these blanks correctly? Be specific to the question content - what subject area is this? What principles or terminology are relevant?"
+}}
+
+Example of GOOD feedback (detailed and contextual):
+- "This question tests your knowledge of the water cycle. The blanks require you to identify the key processes and stages. Think about what happens to water as it moves from oceans to clouds to precipitation..."
+
+Example of BAD feedback (too generic - AVOID THIS):
+- "Read the sentence carefully and think about what words fit grammatically."
+
+Make your feedback detailed, contextual, and helpful!"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=ai_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=600
+            )
+
+            # Parse JSON response
+            feedback_text = response.choices[0].message.content.strip()
+
+            # Handle markdown code blocks if present
+            if feedback_text.startswith("```"):
+                feedback_text = feedback_text.split("```")[1]
+                if feedback_text.startswith("json"):
+                    feedback_text = feedback_text[4:]
+                feedback_text = feedback_text.strip()
+
+            feedback_json = json.loads(feedback_text)
+
+            # Calculate points from percentage score
+            percentage_score = grading_result['percentage']
+            points_earned = (percentage_score / 100.0) * question.points
+
+            return {
+                "is_correct": grading_result['is_correct'],
+                "correctness_score": int(percentage_score),
+                "points_earned": round(points_earned, 2),
+                "points_possible": question.points,
+                "criterion_scores": {},  # Fill-blank uses algorithmic grading, not criterion-based
+                "confidence_level": "high" if grading_result['is_correct'] else "medium",
+                "explanation": feedback_json.get("explanation", ""),
+                "improvement_hint": feedback_json.get("improvement_hint"),
+                "concept_explanation": feedback_json.get("concept_explanation"),
+                "grading_details": grading_result,
+                "feedback_type": "fill_blank"
+            }
+
+        except Exception as e:
+            logger.error(f"AI feedback generation failed for fill-blank: {str(e)}")
+            # Return grading results without AI-generated text and WITHOUT revealing correct answers
+
+            # Build detailed explanation from blank results WITHOUT revealing which blanks are wrong
+            blank_results = grading_result.get('blank_results', [])
+            num_correct = sum(1 for r in blank_results if r['is_correct'])
+            num_incorrect = len(blank_results) - num_correct
+            total_blanks = len(blank_results)
+
+            # Create explanation without revealing specific blank positions that are wrong
+            if grading_result['is_correct']:
+                explanation = f"Excellent! You filled in all {total_blanks} blank(s) correctly."
+            else:
+                explanation = f"You correctly filled {num_correct} out of {total_blanks} blank(s)."
+                if num_incorrect > 0:
+                    explanation += f" {num_incorrect} blank(s) need(s) revision."
+
+            # Create improvement hint if not perfect score
+            improvement_hint = None
+            if not grading_result['is_correct']:
+                improvement_hint = "Review the context around each blank carefully. Consider the grammar, meaning, and technical accuracy required for each answer. Think about what makes sense in the overall context of the sentence or paragraph."
+
+            # Calculate points from percentage score
+            percentage_score = grading_result['percentage']
+            points_earned = (percentage_score / 100.0) * question.points
+
+            return {
+                "is_correct": grading_result['is_correct'],
+                "correctness_score": int(percentage_score),
+                "points_earned": round(points_earned, 2),
+                "points_possible": question.points,
+                "criterion_scores": {},  # Fill-blank uses algorithmic grading, not criterion-based
+                "confidence_level": "low",  # Fallback has low confidence
+                "explanation": explanation,
+                "improvement_hint": improvement_hint,
+                "concept_explanation": "Fill-in-the-blank questions test your understanding of specific terms and concepts. Read the entire sentence or paragraph carefully, paying attention to clues in the surrounding text. Make sure your answers are grammatically correct and contextually appropriate.",
+                "grading_details": grading_result,
+                "feedback_type": "fill_blank",
+                "fallback": True
+            }
+
+    def _analyze_mcq_multiple_answer(
+        self,
+        student_answer: Dict[str, Any],
+        question: Question,
+        ai_model: str,
+        rubric: Dict[str, Any],
+        rag_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Analyze multiple-correct MCQ answer"""
+        from app.services.question_grading import QuestionGradingService
+
+        # Get extended config
+        extended_config = question.extended_config or {}
+        correct_option_ids = extended_config.get('correct_option_ids', [])
+
+        # Get grading settings from rubric first, then fall back to question config
+        question_type_settings = rubric.get('question_type_settings', {}).get('mcq_multiple', {})
+        # Always use partial credit for multiple answer MCQ (allows getting some points)
+        partial_credit = True
+        # Teacher controls whether wrong answers are penalized
+        penalty_for_wrong = question_type_settings.get('penalty_for_wrong', extended_config.get('penalty_for_wrong', True))
+
+        if not correct_option_ids:
+            logger.error(f"MCQ-multiple question {question.id} has no correct options configured")
+            return self._error_response("Question configuration error")
+
+        # Extract selected options from answer data
+        # Format: {"selected_options": ["A", "B", "C"]}
+        selected_options = student_answer.get('selected_options', [])
+        options = question.options or {}
+
+        # Grade using the grading service
+        grading_service = QuestionGradingService()
+        grading_result = grading_service.grade_mcq_multiple(
+            selected_options=selected_options,
+            correct_option_ids=correct_option_ids,
+            total_options=len(options),
+            partial_credit=partial_credit,
+            penalty_for_wrong=penalty_for_wrong
+        )
+
+        # Build feedback prompt (no rubric for MCQ - just correctness)
+        selected_text = ", ".join([f"{opt}: {options.get(opt, '')}" for opt in selected_options])
+        correct_text = ", ".join([f"{opt}: {options.get(opt, '')}" for opt in correct_option_ids])
+
+        prompt = f"""You are an educational AI providing feedback on a multiple-choice question with multiple correct answers.
+
+Question: {question.text}
+
+Options:
+{chr(10).join([f"{k}: {v}" for k, v in options.items()])}
+
+Student selected: {selected_text}
+
+[INTERNAL - For AI only] Correct answers: {correct_text}
+
+Grading:
+- Correctly selected: {', '.join(grading_result['correctly_selected']) or 'None'}
+- Incorrectly selected: {', '.join(grading_result['incorrectly_selected']) or 'None'}
+- Missed correct options: {', '.join(grading_result['missed_correct']) or 'None'}
+- Score: {grading_result['score']:.1f}%
+
+⚠️ CRITICAL INSTRUCTION: NEVER reveal which specific options are correct in your feedback. DO NOT mention option letters/IDs (A, B, C, etc.) as being correct or incorrect. Instead:
+
+1. **Analyze the question content**: Understand what topic/concept this question is testing
+2. **Provide contextual feedback**: Give feedback specific to THIS question's subject matter
+3. **Explain the concepts**: Help the student understand the underlying principles related to this specific topic
+4. **Give meaningful hints**: Provide conceptual guidance that helps them reconsider their approach to THIS particular question
+5. **Be detailed and helpful**: Don't give generic advice - make it relevant to the actual content of the question and options
+
+Your goal is to help students LEARN and DISCOVER the correct answers through understanding the concepts, not to give generic advice or reveal answers.
+
+IMPORTANT: Your feedback should clearly demonstrate that you understand what this question is about. Avoid generic phrases like "review the course material" without explaining WHAT concepts to focus on.
+
+Provide constructive, DETAILED, and CONTEXTUAL feedback in JSON format:
+{{
+    "explanation": "Detailed analysis of their performance. Start by acknowledging what they selected and explain the performance (e.g., 'You selected X option(s), and got Y correct'). Then provide insight into what this question is testing and why understanding [specific concept] is important. Be specific to THIS question's content.",
+
+    "improvement_hint": "Specific, contextual guidance related to THIS question's topic. Don't just say 'review all options' - instead, help them think about the specific concepts, principles, or criteria they should consider when evaluating the options. Reference the actual subject matter of the question. Guide them to think differently about the topic being tested.",
+
+    "concept_explanation": "Explain the key concept or principle that THIS specific question is testing. What should students understand about [this topic] to answer correctly? What's the learning objective? Be specific to the question content, not generic."
+}}
+
+Example of GOOD feedback (detailed and contextual):
+- "This question tests your understanding of data structures in computer science. When selecting the best data structure for a task, consider factors like time complexity, space efficiency, and the specific operations you need to perform..."
+
+Example of BAD feedback (too generic - AVOID THIS):
+- "Review all the options carefully. Think about what makes an option correct."
+
+Make your feedback detailed, contextual, and helpful!"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=ai_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=700
+            )
+
+            # Parse JSON response
+            feedback_text = response.choices[0].message.content.strip()
+
+            # Handle markdown code blocks if present
+            if feedback_text.startswith("```"):
+                feedback_text = feedback_text.split("```")[1]
+                if feedback_text.startswith("json"):
+                    feedback_text = feedback_text[4:]
+                feedback_text = feedback_text.strip()
+
+            feedback_json = json.loads(feedback_text)
+
+            # Use algorithmic grading score (no rubric for MCQ)
+            percentage_score = grading_result['score']
+            points_earned = (percentage_score / 100.0) * question.points
+
+            return {
+                "is_correct": grading_result['is_correct'],
+                "correctness_score": int(percentage_score),
+                "points_earned": round(points_earned, 2),
+                "points_possible": question.points,
+                "criterion_scores": {},  # MCQ uses algorithmic grading, not rubric
+                "confidence_level": "high" if grading_result['is_correct'] else "medium",
+                "explanation": feedback_json.get("explanation", ""),
+                "improvement_hint": feedback_json.get("improvement_hint"),
+                "concept_explanation": feedback_json.get("concept_explanation"),
+                "grading_details": grading_result,
+                "selected_options": selected_options,
+                "correct_options": correct_option_ids,
+                "available_options": options,
+                "feedback_type": "mcq_multiple"
+            }
+
+        except Exception as e:
+            logger.error(f"AI feedback generation failed for mcq-multiple: {str(e)}")
+
+            # Build comprehensive fallback feedback WITHOUT revealing correct answers
+            correctly_selected = grading_result.get('correctly_selected', [])
+            incorrectly_selected = grading_result.get('incorrectly_selected', [])
+            missed_correct = grading_result.get('missed_correct', [])
+
+            num_correct = len(correctly_selected)
+            num_incorrect = len(incorrectly_selected)
+            num_missed = len(missed_correct)
+            total_correct_options = len(correct_option_ids)
+
+            # Create explanation without revealing which options are correct
+            if grading_result['is_correct']:
+                explanation = "Great job! You selected all the correct answers for this question."
+            else:
+                explanation_parts = []
+
+                if num_correct > 0:
+                    explanation_parts.append(f"You got {num_correct} correct selection(s).")
+
+                if num_incorrect > 0:
+                    explanation_parts.append(f"However, {num_incorrect} of your selection(s) may not be correct.")
+
+                if num_missed > 0:
+                    explanation_parts.append(f"You may have missed {num_missed} correct option(s).")
+
+                explanation = " ".join(explanation_parts) if explanation_parts else "Your answer is partially correct."
+
+            # Create improvement hint without revealing answers
+            improvement_hint = None
+            if not grading_result['is_correct']:
+                hints = []
+
+                if num_missed > 0:
+                    hints.append("carefully review all the options again - there may be more correct answers than you selected")
+
+                if num_incorrect > 0:
+                    hints.append("reconsider some of your selections - not all of them may be accurate")
+
+                if hints:
+                    improvement_hint = f"Take time to {' and '.join(hints)}. Think critically about what the question is asking and consider the underlying concepts."
+
+            # Calculate points from percentage score
+            percentage_score = grading_result['score']
+            points_earned = (percentage_score / 100.0) * question.points
+
+            return {
+                "is_correct": grading_result['is_correct'],
+                "correctness_score": int(percentage_score),
+                "points_earned": round(points_earned, 2),
+                "points_possible": question.points,
+                "criterion_scores": {},  # Empty for fallback
+                "confidence_level": "low",  # Fallback has low confidence
+                "explanation": explanation,
+                "improvement_hint": improvement_hint,
+                "concept_explanation": "This question requires selecting all correct options. Review the course material and think carefully about each option before making your selections. Consider what makes an option correct or incorrect in the context of the question.",
+                "grading_details": grading_result,
+                "selected_options": selected_options,
+                "correct_options": correct_option_ids,
+                "available_options": options,
+                "feedback_type": "mcq_multiple",
+                "fallback": True
+            }
+
+    def _analyze_multi_part_answer(
+        self,
+        student_answer: Dict[str, Any],
+        question: Question,
+        ai_model: str,
+        rubric: Dict[str, Any],
+        rag_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Analyze multi-part question answer"""
+        # Get extended config with sub-questions
+        extended_config = question.extended_config or {}
+        sub_questions = extended_config.get('sub_questions', [])
+
+        if not sub_questions:
+            logger.error(f"Multi-part question {question.id} has no sub-questions configured")
+            return self._error_response("Question configuration error")
+
+        # Extract sub-answers from answer data
+        # Format: {"sub_answers": {"1a": "answer", "1b": {"selected_option": "A"}, ...}}
+        sub_answers = student_answer.get('sub_answers', {})
+
+        # Grade each sub-question
+        sub_results = []
+        total_points = 0.0
+        earned_points = 0.0
+
+        for sub_q in sub_questions:
+            sub_id = sub_q['id']
+            sub_type = sub_q['type']
+            sub_points = sub_q.get('points', 1.0)
+            total_points += sub_points
+
+            student_sub_answer = sub_answers.get(sub_id, "")
+
+            # Grade based on sub-question type
+            if sub_type == 'mcq':
+                # MCQ sub-question
+                selected = student_sub_answer.get('selected_option', '') if isinstance(student_sub_answer, dict) else student_sub_answer
+                correct_option = sub_q.get('correct_option_id', '')
+                is_correct = selected.upper() == correct_option.upper() if selected and correct_option else False
+                sub_earned = sub_points if is_correct else 0.0
+            elif sub_type in ['short', 'long']:
+                # Text sub-question - use AI to grade against correct answer
+                correct_answer = sub_q.get('correct_answer', '')
+                student_text = student_sub_answer if isinstance(student_sub_answer, str) else str(student_sub_answer)
+
+                if correct_answer and student_text:
+                    # Use AI to grade text answer
+                    try:
+                        grade_prompt = f"""Compare the student's answer to the correct answer and determine correctness.
+
+Question: {sub_q.get('text', '')}
+Correct Answer: {correct_answer}
+Student Answer: {student_text}
+
+Respond in JSON format:
+{{
+    "is_correct": true/false,
+    "similarity_score": 0-100,
+    "reasoning": "brief explanation"
+}}"""
+
+                        response = self.client.chat.completions.create(
+                            model=ai_model,
+                            messages=[{"role": "user", "content": grade_prompt}],
+                            temperature=0.3,
+                            max_tokens=300
+                        )
+
+                        # Parse JSON response
+                        grade_text = response.choices[0].message.content.strip()
+
+                        # Handle markdown code blocks if present
+                        if grade_text.startswith("```"):
+                            grade_text = grade_text.split("```")[1]
+                            if grade_text.startswith("json"):
+                                grade_text = grade_text[4:]
+                            grade_text = grade_text.strip()
+
+                        grade_result = json.loads(grade_text)
+                        is_correct = grade_result.get('is_correct', False)
+                        similarity = grade_result.get('similarity_score', 0) / 100
+
+                        # Award partial credit based on similarity
+                        if is_correct:
+                            sub_earned = sub_points
+                        else:
+                            sub_earned = sub_points * similarity if similarity > 0.5 else 0.0
+
+                    except Exception as e:
+                        logger.error(f"AI grading failed for sub-question {sub_id}: {str(e)}")
+                        # Fall back to keyword matching
+                        is_correct = correct_answer.lower() in student_text.lower()
+                        sub_earned = sub_points if is_correct else 0.0
+                else:
+                    is_correct = False
+                    sub_earned = 0.0
+            else:
+                is_correct = False
+                sub_earned = 0.0
+
+            earned_points += sub_earned
+
+            sub_results.append({
+                "sub_id": sub_id,
+                "sub_type": sub_type,
+                "student_answer": student_sub_answer,
+                "is_correct": is_correct,
+                "points_possible": sub_points,
+                "points_earned": sub_earned
+            })
+
+        # Calculate score
+        score = (earned_points / total_points * 100) if total_points > 0 else 0
+
+        # Generate overall feedback
+        # Internal analysis for AI (includes which sub-questions are wrong)
+        sub_results_internal = "\n".join([
+            f"[INTERNAL] {r['sub_id']} ({r['sub_type']}): {r['points_earned']}/{r['points_possible']} points - {'✓ Correct' if r['is_correct'] else '✗ Needs work'}"
+            for r in sub_results
+        ])
+
+        # Count statistics for student-facing feedback
+        correct_count = sum(1 for r in sub_results if r['is_correct'])
+        total_count = len(sub_results)
+
+        prompt = f"""You are an educational AI providing feedback on a multi-part question.
+
+Main Question: {question.text}
+
+Sub-questions performance (INTERNAL - For AI analysis only):
+{sub_results_internal}
+
+Total Score: {earned_points}/{total_points} ({score:.1f}%)
+Correct sub-questions: {correct_count}/{total_count}
+
+⚠️ CRITICAL INSTRUCTION: NEVER reveal which specific sub-questions (by ID like "1a", "1b", etc.) are correct or incorrect in your feedback. DO NOT tell the student which parts they got wrong. Instead:
+
+1. **Analyze the question content**: Understand what overall topic/concept this multi-part question is testing
+2. **Provide contextual feedback**: Give feedback specific to THIS question's subject matter and how the parts relate
+3. **Explain the connections**: Help the student understand how the different parts connect to each other and to the main topic
+4. **Give meaningful guidance**: Provide conceptual hints relevant to THIS particular question's topic
+5. **Be detailed and specific**: Don't give generic advice - make it relevant to the actual content and topic being tested
+
+Your goal is to help students LEARN by understanding the concepts being tested across all parts, not to point them to specific parts or reveal answers.
+
+IMPORTANT: Your feedback should clearly demonstrate that you understand what this question is testing. Reference the specific subject matter and topic.
+
+Provide constructive, DETAILED, and CONTEXTUAL feedback in JSON format:
+{{
+    "explanation": "Detailed analysis of their overall performance. Start by explaining how many parts they answered correctly (e.g., 'You answered X out of Y parts correctly'). Then provide insight into what this multi-part question is testing - what is the overall topic? How do the different parts relate to this topic? Why is understanding this important? Be specific to THIS question's content and subject matter.",
+
+    "improvement_hint": "Specific, contextual guidance related to THIS question's overall topic. Don't just say 'review all parts' - instead, help them understand the key concepts they need to grasp to answer all parts successfully. For example: 'Consider how [concept A] relates to [concept B] in the context of [topic]' or 'Think about the progression from [idea] to [result] when considering all the parts together'. Guide them to think holistically about the topic.",
+
+    "concept_explanation": "Explain the overarching concept or principle that connects all the sub-questions together. What is the main learning objective? How do the different parts build on each other? Be specific to this question's topic - what subject area is this? What should students understand to answer all parts correctly?"
+}}
+
+Example of GOOD feedback (detailed and contextual):
+- "This multi-part question tests your understanding of photosynthesis and how its different stages work together. The parts explore the light-dependent and light-independent reactions and how they connect. Consider the flow of energy and matter through the entire process..."
+
+Example of BAD feedback (too generic - AVOID THIS):
+- "Review each part carefully and make sure you understand what each one is asking."
+
+Make your feedback detailed, contextual, and helpful!"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=ai_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=700
+            )
+
+            # Parse JSON response
+            feedback_text = response.choices[0].message.content.strip()
+
+            # Handle markdown code blocks if present
+            if feedback_text.startswith("```"):
+                feedback_text = feedback_text.split("```")[1]
+                if feedback_text.startswith("json"):
+                    feedback_text = feedback_text[4:]
+                feedback_text = feedback_text.strip()
+
+            feedback_json = json.loads(feedback_text)
+
+            # Calculate question-level points from percentage score
+            question_points_earned = (score / 100.0) * question.points
+
+            return {
+                "is_correct": earned_points == total_points,
+                "correctness_score": int(score),
+                "points_earned": round(question_points_earned, 2),  # Question-level points
+                "points_possible": question.points,  # Question-level max points
+                "criterion_scores": {},  # Multi-part uses sub-question grading, not criterion-based
+                "confidence_level": "high" if earned_points == total_points else "medium",
+                "explanation": feedback_json.get("explanation", ""),
+                "improvement_hint": feedback_json.get("improvement_hint"),
+                "concept_explanation": feedback_json.get("concept_explanation"),
+                "sub_results": sub_results,
+                "sub_total_points": total_points,  # Sub-question points (for internal tracking)
+                "sub_earned_points": earned_points,  # Sub-question earned points (for internal tracking)
+                "feedback_type": "multi_part"
+            }
+
+        except Exception as e:
+            logger.error(f"AI feedback generation failed for multi-part: {str(e)}")
+
+            # Build detailed explanation from sub-results WITHOUT revealing which parts are wrong
+            correct_count = sum(1 for r in sub_results if r['is_correct'])
+            total_count = len(sub_results)
+
+            # Create explanation without revealing specific sub-question IDs that are wrong
+            if earned_points == total_points:
+                explanation = f"Excellent work! You answered all {total_count} sub-questions correctly."
+            else:
+                explanation = f"You answered {correct_count} out of {total_count} sub-questions correctly."
+                if correct_count < total_count:
+                    explanation += f" Some of your answers need revision."
+
+            # Create improvement hint if not perfect score
+            improvement_hint = None
+            if earned_points < total_points:
+                improvement_hint = "Review each part of the question carefully. Make sure you fully understand what each sub-question is asking. Some parts may require different types of thinking or knowledge - consider the relationship between all the parts and the main question."
+
+            # Calculate question-level points from percentage score
+            question_points_earned = (score / 100.0) * question.points
+
+            return {
+                "is_correct": earned_points == total_points,
+                "correctness_score": int(score),
+                "points_earned": round(question_points_earned, 2),  # Question-level points
+                "points_possible": question.points,  # Question-level max points
+                "criterion_scores": {},  # Multi-part uses sub-question grading, not criterion-based
+                "confidence_level": "low",  # Fallback has low confidence
+                "explanation": explanation,
+                "improvement_hint": improvement_hint,
+                "concept_explanation": "Multi-part questions test your understanding of how different concepts relate to each other. Each part builds on the overall topic, so make sure you understand both the individual components and their connections. Take time to read each part carefully and answer thoroughly.",
+                "sub_results": sub_results,
+                "sub_total_points": total_points,  # Sub-question points (for internal tracking)
+                "sub_earned_points": earned_points,  # Sub-question earned points (for internal tracking)
+                "feedback_type": "multi_part",
+                "fallback": True
+            }
 
     def _feedback_model_to_dict(self, feedback_model) -> Dict[str, Any]:
         """Convert AIFeedback model to dictionary for API response"""

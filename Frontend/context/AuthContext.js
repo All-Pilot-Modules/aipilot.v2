@@ -37,14 +37,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (identifier, password) => {
     try {
       const result = await auth.login(identifier, password);
-      // User data is now in result.user from backend
-      console.log('✅ Login successful, setting user state:', result.user?.id || result.user?.sub);
       setUser(result.user);
       setIsAuthenticated(true);
-      console.log('✅ Auth state updated: isAuthenticated=true');
       return result;
     } catch (error) {
-      console.error('❌ Login failed:', error);
       setIsAuthenticated(false);
       throw error;
     }
@@ -66,11 +62,19 @@ export const AuthProvider = ({ children }) => {
     router.push('/');
   };
 
+  const updateUser = (updatedUserData) => {
+    setUser(prevUser => ({
+      ...prevUser,
+      ...updatedUserData
+    }));
+  };
+
   const value = {
     user,
     login,
     register,
     logout,
+    updateUser,
     loading,
     isAuthenticated,
   };

@@ -2,9 +2,11 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,16 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
 import {
   HelpCircle,
   Plus,
@@ -38,13 +30,24 @@ import {
   Image,
   Sparkles,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  Trophy
 } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback, useMemo, memo } from "react";
 import { apiClient } from "@/lib/auth";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
 
-function QuestionsPageContent() {
+const QuestionsPageContent = memo(function QuestionsPageContent() {
   const { user, loading, isAuthenticated } = useAuth();
   const searchParams = useSearchParams();
   const moduleName = searchParams.get('module');
@@ -53,6 +56,8 @@ function QuestionsPageContent() {
   const [currentModule, setCurrentModule] = useState(null);
   const [moduleDocument, setModuleDocument] = useState(null);
   const [unreviewedCount, setUnreviewedCount] = useState(0);
+  const [moduleRubric, setModuleRubric] = useState(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -66,13 +71,24 @@ function QuestionsPageContent() {
     type: "mcq",
     text: "",
     slide_number: "",
+    points: "1.0",
     options: ["", "", "", ""],
     correct_answer: "",
     correct_option_id: "",
     learning_outcome: "",
     bloom_taxonomy: "",
     image_url: "",
-    has_text_input: false
+    has_text_input: false,
+    // New question types fields
+    extended_config: null,
+    // Fill-in-the-blank specific
+    blanks: [],
+    // MCQ Multiple specific
+    correct_option_ids: [],
+    partial_credit: true,
+    penalty_for_wrong: true,
+    // Multi-part specific
+    sub_questions: []
   });
 
   useEffect(() => {
@@ -83,6 +99,7 @@ function QuestionsPageContent() {
   }, [isAuthenticated, user, moduleName]);
 
   const fetchModuleAndQuestions = async () => {
+    setLoadingQuestions(true);
     try {
       // Get module info
       console.log('Fetching modules for teacher:', user.id);
@@ -125,6 +142,15 @@ function QuestionsPageContent() {
           console.error('Failed to fetch unreviewed count:', error);
           setUnreviewedCount(0);
         }
+
+        // Fetch rubric settings for default points
+        try {
+          const rubricData = await apiClient.get(`/api/modules/${foundModule.id}/rubric`);
+          setModuleRubric(rubricData.rubric);
+        } catch (error) {
+          console.error('Failed to fetch rubric:', error);
+          setModuleRubric(null);
+        }
       } else {
         console.log('Module not found for name:', moduleName, 'in modules:', moduleData);
       }
@@ -132,13 +158,31 @@ function QuestionsPageContent() {
       console.error('Failed to fetch module or questions:', error);
       console.error('Error details:', error.response?.data || error.message);
       setQuestions([]);
+    } finally {
+      setLoadingQuestions(false);
     }
+  };
+
+  // Helper function to get default points from rubric
+  const getDefaultPoints = (questionType) => {
+    if (!moduleRubric || !moduleRubric.question_type_settings) {
+      return 1.0; // Fallback default
+    }
+
+    const typeSettings = moduleRubric.question_type_settings[questionType];
+    return typeSettings?.default_points || 1.0;
   };
 
   const getQuestionIcon = (type) => {
     switch (type) {
       case 'mcq':
         return <CheckCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
+      case 'mcq_multiple':
+        return <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />;
+      case 'fill_blank':
+        return <FileText className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />;
+      case 'multi_part':
+        return <AlignLeft className="w-5 h-5 text-purple-600 dark:text-purple-400" />;
       case 'short':
         return <MessageCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
       case 'long':
@@ -149,7 +193,41 @@ function QuestionsPageContent() {
   };
 
   const getQuestionTypeBadge = (type) => {
-    return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-0";
+    switch (type) {
+      case 'mcq':
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-0";
+      case 'mcq_multiple':
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-0";
+      case 'fill_blank':
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 border-0";
+      case 'multi_part':
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-0";
+      case 'short':
+        return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300 border-0";
+      case 'long':
+        return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 border-0";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300 border-0";
+    }
+  };
+
+  const getQuestionTypeLabel = (type) => {
+    switch (type) {
+      case 'mcq':
+        return "MCQ";
+      case 'mcq_multiple':
+        return "MCQ Multiple";
+      case 'fill_blank':
+        return "Fill Blanks";
+      case 'multi_part':
+        return "Multi-Part";
+      case 'short':
+        return "Short";
+      case 'long':
+        return "Long";
+      default:
+        return type.toUpperCase();
+    }
   };
 
   const filteredQuestions = questions.filter(question => {
@@ -159,17 +237,25 @@ function QuestionsPageContent() {
   });
 
   const resetForm = () => {
+    const defaultType = "mcq";
     setQuestionForm({
-      type: "mcq",
+      type: defaultType,
       text: "",
       slide_number: "",
+      points: getDefaultPoints(defaultType).toString(),
       options: ["", "", "", ""],
       correct_answer: "",
       correct_option_id: "",
       learning_outcome: "",
       bloom_taxonomy: "",
       image_url: "",
-      has_text_input: false
+      has_text_input: false,
+      extended_config: null,
+      blanks: [],
+      correct_option_ids: [],
+      partial_credit: true,
+      penalty_for_wrong: true,
+      sub_questions: []
     });
   };
 
@@ -183,23 +269,63 @@ function QuestionsPageContent() {
         ? moduleDocument.id
         : null;
 
+      // Build extended_config based on question type
+      let extended_config = null;
+      let options = null;
+      let correct_option_id = null;
+      let correct_answer = null;
+
+      if (questionForm.type === "mcq") {
+        options = questionForm.options
+          .filter(opt => opt.trim())
+          .reduce((acc, opt, index) => ({
+            ...acc,
+            [String.fromCharCode(65 + index)]: opt
+          }), {});
+        correct_option_id = questionForm.correct_option_id;
+      } else if (questionForm.type === "mcq_multiple") {
+        options = questionForm.options
+          .filter(opt => opt.trim())
+          .reduce((acc, opt, index) => ({
+            ...acc,
+            [String.fromCharCode(65 + index)]: opt
+          }), {});
+        extended_config = {
+          correct_option_ids: questionForm.correct_option_ids,
+          partial_credit: questionForm.partial_credit,
+          penalty_for_wrong: questionForm.penalty_for_wrong
+        };
+      } else if (questionForm.type === "fill_blank") {
+        extended_config = {
+          blanks: questionForm.blanks,
+          allow_partial_credit: true
+        };
+      } else if (questionForm.type === "multi_part") {
+        extended_config = {
+          sub_questions: questionForm.sub_questions
+        };
+      } else {
+        // For short/long text questions
+        correct_answer = questionForm.correct_answer;
+      }
+
       const payload = {
-        ...questionForm,
-        module_id: currentModule.id,  // ✅ Add module_id - REQUIRED!
-        document_id: documentId,  // Can be null for manually created questions
+        module_id: currentModule.id,
+        document_id: documentId,
+        type: questionForm.type,
+        text: questionForm.text,
         slide_number: questionForm.slide_number ? parseInt(questionForm.slide_number) : null,
-        options: questionForm.type === "mcq" ?
-          questionForm.options
-            .filter(opt => opt.trim())
-            .reduce((acc, opt, index) => ({
-              ...acc,
-              [String.fromCharCode(65 + index)]: opt
-            }), {})
-          : null,
-        correct_option_id: questionForm.type === "mcq" ? questionForm.correct_option_id : null,
-        correct_answer: questionForm.type !== "mcq" ? questionForm.correct_answer : null,
-        status: 'active',  // Manually created questions are immediately active
-        is_ai_generated: false  // Mark as manually created
+        points: questionForm.points ? parseFloat(questionForm.points) : 1.0,
+        options: options,
+        correct_option_id: correct_option_id,
+        correct_answer: correct_answer,
+        extended_config: extended_config,
+        learning_outcome: questionForm.learning_outcome || null,
+        bloom_taxonomy: questionForm.bloom_taxonomy || null,
+        image_url: questionForm.image_url || null,
+        has_text_input: questionForm.has_text_input,
+        status: 'active',
+        is_ai_generated: false
       };
 
       console.log('📝 Creating question with payload:', payload);
@@ -237,20 +363,59 @@ function QuestionsPageContent() {
     if (!selectedQuestion || !questionForm.text) return;
 
     try {
+      // Build extended_config based on question type (same as create)
+      let extended_config = null;
+      let options = null;
+      let correct_option_id = null;
+      let correct_answer = null;
+
+      if (questionForm.type === "mcq") {
+        options = questionForm.options
+          .filter(opt => opt.trim())
+          .reduce((acc, opt, index) => ({
+            ...acc,
+            [String.fromCharCode(65 + index)]: opt
+          }), {});
+        correct_option_id = questionForm.correct_option_id;
+      } else if (questionForm.type === "mcq_multiple") {
+        options = questionForm.options
+          .filter(opt => opt.trim())
+          .reduce((acc, opt, index) => ({
+            ...acc,
+            [String.fromCharCode(65 + index)]: opt
+          }), {});
+        extended_config = {
+          correct_option_ids: questionForm.correct_option_ids,
+          partial_credit: questionForm.partial_credit,
+          penalty_for_wrong: questionForm.penalty_for_wrong
+        };
+      } else if (questionForm.type === "fill_blank") {
+        extended_config = {
+          blanks: questionForm.blanks,
+          allow_partial_credit: true
+        };
+      } else if (questionForm.type === "multi_part") {
+        extended_config = {
+          sub_questions: questionForm.sub_questions
+        };
+      } else {
+        correct_answer = questionForm.correct_answer;
+      }
+
       const payload = {
-        ...questionForm,
-        document_id: selectedQuestion.document_id, // Keep the original document_id
+        document_id: selectedQuestion.document_id,
+        type: questionForm.type,
+        text: questionForm.text,
         slide_number: questionForm.slide_number ? parseInt(questionForm.slide_number) : null,
-        options: questionForm.type === "mcq" ?
-          questionForm.options
-            .filter(opt => opt.trim())
-            .reduce((acc, opt, index) => ({
-              ...acc,
-              [String.fromCharCode(65 + index)]: opt
-            }), {})
-          : null,
-        correct_option_id: questionForm.type === "mcq" ? questionForm.correct_option_id : null,
-        correct_answer: questionForm.type !== "mcq" ? questionForm.correct_answer : null
+        points: questionForm.points ? parseFloat(questionForm.points) : 1.0,
+        options: options,
+        correct_option_id: correct_option_id,
+        correct_answer: correct_answer,
+        extended_config: extended_config,
+        learning_outcome: questionForm.learning_outcome || null,
+        bloom_taxonomy: questionForm.bloom_taxonomy || null,
+        image_url: questionForm.image_url || null,
+        has_text_input: questionForm.has_text_input
       };
 
       const response = await apiClient.put(`/api/questions/${selectedQuestion.id}`, payload);
@@ -299,21 +464,61 @@ function QuestionsPageContent() {
       correctOptionId = question.correct_option_id || question.correct_answer || "";
     }
 
+    // Extract extended_config data for new question types
+    let blanks = [];
+    let correct_option_ids = [];
+    let partial_credit = true;
+    let penalty_for_wrong = true;
+    let sub_questions = [];
+
+    if (question.type === "mcq_multiple" && question.extended_config) {
+      correct_option_ids = question.extended_config.correct_option_ids || [];
+      partial_credit = question.extended_config.partial_credit !== undefined ? question.extended_config.partial_credit : true;
+      penalty_for_wrong = question.extended_config.penalty_for_wrong !== undefined ? question.extended_config.penalty_for_wrong : true;
+    }
+
+    if (question.type === "fill_blank" && question.extended_config) {
+      blanks = question.extended_config.blanks || [];
+      // Regenerate context from question text
+      if (question.text) {
+        const parts = question.text.split('___');
+        blanks = blanks.map((blank, index) => ({
+          ...blank,
+          context: {
+            before: parts[index]?.slice(-20) || '',
+            after: parts[index + 1]?.slice(0, 20) || ''
+          }
+        }));
+      }
+    }
+
+    if (question.type === "multi_part" && question.extended_config) {
+      sub_questions = question.extended_config.sub_questions || [];
+    }
+
     console.log("📝 Opening edit dialog for question:", question);
-    console.log("Options:", optionsArray);
-    console.log("Correct option ID:", correctOptionId);
+    console.log("Type:", question.type);
+    console.log("Extended config:", question.extended_config);
 
     setQuestionForm({
       type: question.type,
       text: question.text,
       slide_number: question.slide_number?.toString() || "",
+      points: question.points?.toString() || "1.0",
       options: optionsArray,
-      correct_answer: question.type !== "mcq" ? (question.correct_answer || "") : "",
+      correct_answer: question.type !== "mcq" && question.type !== "mcq_multiple" ? (question.correct_answer || "") : "",
       correct_option_id: correctOptionId,
       learning_outcome: question.learning_outcome || "",
       bloom_taxonomy: question.bloom_taxonomy || "",
       image_url: question.image_url || "",
-      has_text_input: question.has_text_input || false
+      has_text_input: question.has_text_input || false,
+      // New question types fields
+      extended_config: question.extended_config || null,
+      blanks: blanks,
+      correct_option_ids: correct_option_ids,
+      partial_credit: partial_credit,
+      penalty_for_wrong: penalty_for_wrong,
+      sub_questions: sub_questions
     });
 
     // Set image preview if question has an image
@@ -331,6 +536,42 @@ function QuestionsPageContent() {
     const newOptions = [...questionForm.options];
     newOptions[index] = value;
     setQuestionForm({...questionForm, options: newOptions});
+  };
+
+  // Helper function to detect blanks in fill_blank questions
+  const detectBlanksInText = (text) => {
+    const blankMarker = '___';
+    const parts = text.split(blankMarker);
+    const blanks = [];
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const beforeText = parts[i].slice(-20); // Last 20 chars before blank
+      const afterText = parts[i + 1].slice(0, 20); // First 20 chars after blank
+
+      blanks.push({
+        position: i,
+        correct_answers: questionForm.blanks?.[i]?.correct_answers || [],
+        points: questionForm.blanks?.[i]?.points || 1,
+        case_sensitive: questionForm.blanks?.[i]?.case_sensitive || false,
+        context: { before: beforeText, after: afterText }
+      });
+    }
+
+    return blanks;
+  };
+
+  // Handle question text change for fill_blank type
+  const handleQuestionTextChange = (text) => {
+    if (questionForm.type === 'fill_blank') {
+      const detectedBlanks = detectBlanksInText(text);
+      setQuestionForm({
+        ...questionForm,
+        text: text,
+        blanks: detectedBlanks
+      });
+    } else {
+      setQuestionForm({...questionForm, text: text});
+    }
   };
 
   const handleImageSelect = (e) => {
@@ -592,14 +833,28 @@ function QuestionsPageContent() {
 
                       <div>
                         <Label htmlFor="type">Question Type *</Label>
-                        <Select value={questionForm.type} onValueChange={(value) => setQuestionForm({...questionForm, type: value})}>
+                        <Select value={questionForm.type} onValueChange={(value) => {
+                          // Reset type-specific fields when type changes
+                          const newForm = {
+                            ...questionForm,
+                            type: value,
+                            points: getDefaultPoints(value).toString(),
+                            blanks: value === 'fill_blank' ? [] : [],
+                            correct_option_ids: value === 'mcq_multiple' ? [] : [],
+                            sub_questions: value === 'multi_part' ? [] : []
+                          };
+                          setQuestionForm(newForm);
+                        }}>
                           <SelectTrigger className="mt-1">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="mcq">Multiple Choice</SelectItem>
+                            <SelectItem value="mcq">Multiple Choice (Single Answer)</SelectItem>
+                            <SelectItem value="mcq_multiple">Multiple Choice (Multiple Answers)</SelectItem>
+                            <SelectItem value="fill_blank">Fill in the Blanks</SelectItem>
                             <SelectItem value="short">Short Answer</SelectItem>
                             <SelectItem value="long">Long Answer</SelectItem>
+                            {/* <SelectItem value="multi_part">Multi-Part Question</SelectItem> */}
                           </SelectContent>
                         </Select>
                       </div>
@@ -609,7 +864,7 @@ function QuestionsPageContent() {
                         <Textarea
                           id="text"
                           value={questionForm.text}
-                          onChange={(e) => setQuestionForm({...questionForm, text: e.target.value})}
+                          onChange={(e) => handleQuestionTextChange(e.target.value)}
                           placeholder="Enter your question..."
                           required
                           rows={3}
@@ -695,40 +950,320 @@ function QuestionsPageContent() {
                         </div>
                       )}
 
-                      <div>
-                        <Label htmlFor="correct_answer">Correct Answer {questionForm.type === "mcq" && "*"}</Label>
-                        {questionForm.type === "mcq" ? (
-                          <Select
-                            value={questionForm.correct_option_id}
-                            onValueChange={(value) => setQuestionForm({...questionForm, correct_option_id: value})}
-                          >
-                            <SelectTrigger className="mt-1">
-                              <SelectValue placeholder="Select the correct option" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {questionForm.options
-                                .map((option, index) => {
-                                  const letter = String.fromCharCode(65 + index);
-                                  // Keep all 4 options even if empty, to maintain correct letter-to-index mapping
-                                  return (
-                                    <SelectItem key={letter} value={letter}>
+                      {/* MCQ Multiple - Checkboxes for multiple correct answers */}
+                      {questionForm.type === "mcq_multiple" && (
+                        <div className="space-y-4">
+                          <div>
+                            <Label>Answer Options *</Label>
+                            <div className="space-y-2 mt-2">
+                              {questionForm.options.map((option, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-xs font-medium text-green-600 dark:text-green-400">
+                                    {String.fromCharCode(65 + index)}
+                                  </span>
+                                  <Input
+                                    value={option}
+                                    onChange={(e) => handleOptionChange(index, e.target.value)}
+                                    placeholder={`Option ${index + 1}`}
+                                    className="flex-1 text-sm"
+                                    spellCheck={true}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <Label>Correct Answers * (Select all that apply)</Label>
+                            <div className="space-y-2 mt-2 p-3 border rounded-lg">
+                              {(questionForm.options || []).map((option, index) => {
+                                const letter = String.fromCharCode(65 + index);
+                                const isChecked = (questionForm.correct_option_ids || []).includes(letter);
+                                return (
+                                  <div key={letter} className="flex items-center gap-3">
+                                    <input
+                                      type="checkbox"
+                                      id={`correct-${letter}`}
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        const currentIds = questionForm.correct_option_ids || [];
+                                        const newCorrectIds = e.target.checked
+                                          ? [...currentIds, letter]
+                                          : currentIds.filter(id => id !== letter);
+                                        setQuestionForm({...questionForm, correct_option_ids: newCorrectIds});
+                                      }}
+                                      className="h-4 w-4 text-green-600 focus:ring-green-500"
+                                    />
+                                    <Label htmlFor={`correct-${letter}`} className="cursor-pointer flex-1">
                                       {letter} - {option || "(empty)"}
-                                    </SelectItem>
-                                  );
-                                })}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            id="correct_answer"
-                            value={questionForm.correct_answer}
-                            onChange={(e) => setQuestionForm({...questionForm, correct_answer: e.target.value})}
-                            placeholder="Enter correct answer"
-                            className="mt-1"
-                            spellCheck={true}
-                          />
-                        )}
-                      </div>
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Fill in the Blanks */}
+                      {questionForm.type === "fill_blank" && (
+                        <div className="space-y-4">
+                          <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                              <strong>Auto-detection:</strong> Use <strong>___</strong> (three underscores) in your question text to mark blanks.
+                              Blanks will be automatically detected and you can define correct answers for each below.
+                            </p>
+                          </div>
+                          <div>
+                            <Label>Blanks Configuration</Label>
+                            <div className="space-y-3 mt-2">
+                              {(questionForm.blanks || []).map((blank, index) => (
+                                <div key={index} className="p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-sm">Blank {index + 1}</span>
+                                  </div>
+                                  {blank.context && (
+                                    <div className="mb-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs font-mono">
+                                      <span className="text-gray-600 dark:text-gray-400">{blank.context.before}</span>
+                                      <span className="px-2 py-1 bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 font-bold">___</span>
+                                      <span className="text-gray-600 dark:text-gray-400">{blank.context.after}</span>
+                                    </div>
+                                  )}
+                                  <div className="space-y-2">
+                                    <Input
+                                      placeholder="Correct answer (comma-separated for multiple)"
+                                      value={(blank.correct_answers || []).join(', ')}
+                                      onChange={(e) => {
+                                        const newBlanks = [...(questionForm.blanks || [])];
+                                        newBlanks[index].correct_answers = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                        setQuestionForm({...questionForm, blanks: newBlanks});
+                                      }}
+                                      className="text-sm"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                              {questionForm.blanks.length === 0 && (
+                                <div className="text-center py-4 text-sm text-gray-500">
+                                  No blanks detected. Add <strong>___</strong> (three underscores) in your question text above.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Multi-Part Questions */}
+                      {questionForm.type === "multi_part" && (
+                        <div className="space-y-4">
+                          <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                            <p className="text-sm text-purple-800 dark:text-purple-200">
+                              Create sub-questions (e.g., 1a, 1b, 1c) with different types (MCQ, Short, Long)
+                            </p>
+                          </div>
+                          <div>
+                            <Label>Sub-Questions</Label>
+                            <div className="space-y-4 mt-2">
+                              {(questionForm.sub_questions || []).map((subQ, index) => (
+                                <div key={index} className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <Input
+                                      placeholder="ID (e.g., 1a)"
+                                      value={subQ.id}
+                                      onChange={(e) => {
+                                        const newSubQs = [...(questionForm.sub_questions || [])];
+                                        newSubQs[index].id = e.target.value;
+                                        setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                      }}
+                                      className="w-24 text-sm"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        const newSubQs = (questionForm.sub_questions || []).filter((_, i) => i !== index);
+                                        setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4 text-red-500" />
+                                    </Button>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Select
+                                      value={subQ.type}
+                                      onValueChange={(value) => {
+                                        const newSubQs = [...(questionForm.sub_questions || [])];
+                                        newSubQs[index].type = value;
+                                        setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                      }}
+                                    >
+                                      <SelectTrigger className="text-sm">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="mcq">MCQ</SelectItem>
+                                        <SelectItem value="short">Short</SelectItem>
+                                        <SelectItem value="long">Long</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Textarea
+                                      placeholder="Sub-question text"
+                                      value={subQ.text}
+                                      onChange={(e) => {
+                                        const newSubQs = [...(questionForm.sub_questions || [])];
+                                        newSubQs[index].text = e.target.value;
+                                        setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                      }}
+                                      rows={2}
+                                      className="text-sm"
+                                    />
+                                    {subQ.type === 'mcq' && (
+                                      <>
+                                        <div>
+                                          <Label className="text-xs">Answer Options *</Label>
+                                          <div className="space-y-2 mt-2">
+                                            {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
+                                              const optionValue = subQ.options?.[letter] || '';
+                                              return (
+                                                <div key={letter} className="flex items-center gap-2">
+                                                  <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-xs font-medium text-purple-600 dark:text-purple-400">
+                                                    {letter}
+                                                  </span>
+                                                  <Input
+                                                    value={optionValue}
+                                                    onChange={(e) => {
+                                                      const newSubQs = [...(questionForm.sub_questions || [])];
+                                                      const currentOptions = newSubQs[index].options || {};
+                                                      newSubQs[index].options = {
+                                                        ...currentOptions,
+                                                        [letter]: e.target.value
+                                                      };
+                                                      setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                                    }}
+                                                    placeholder={`Option ${letter}`}
+                                                    className="flex-1 text-xs"
+                                                  />
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs">Correct Answer *</Label>
+                                          <Select
+                                            value={subQ.correct_option_id || ''}
+                                            onValueChange={(value) => {
+                                              const newSubQs = [...(questionForm.sub_questions || [])];
+                                              newSubQs[index].correct_option_id = value;
+                                              setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                            }}
+                                          >
+                                            <SelectTrigger className="mt-1 text-xs">
+                                              <SelectValue placeholder="Select correct option" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {['A', 'B', 'C', 'D'].map((letter) => {
+                                                const optionText = subQ.options?.[letter] || `Option ${letter}`;
+                                                return (
+                                                  <SelectItem key={letter} value={letter}>
+                                                    {letter} - {optionText}
+                                                  </SelectItem>
+                                                );
+                                              })}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </>
+                                    )}
+                                    {(subQ.type === 'short' || subQ.type === 'long') && (
+                                      <div>
+                                        <Label className="text-xs">Correct Answer *</Label>
+                                        <Textarea
+                                          value={subQ.correct_answer || ''}
+                                          onChange={(e) => {
+                                            const newSubQs = [...(questionForm.sub_questions || [])];
+                                            newSubQs[index].correct_answer = e.target.value;
+                                            setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                          }}
+                                          placeholder="Enter the correct answer or acceptable answer"
+                                          rows={subQ.type === 'long' ? 4 : 2}
+                                          className="text-xs mt-1"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const currentSubQs = questionForm.sub_questions || [];
+                                  setQuestionForm({
+                                    ...questionForm,
+                                    sub_questions: [...currentSubQs, { id: '', type: 'mcq', text: '', points: 1, options: { A: '', B: '', C: '', D: '' }, correct_option_id: null }]
+                                  });
+                                }}
+                              >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add Sub-Question
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Only show correct answer field for traditional question types */}
+                      {!["mcq_multiple", "fill_blank", "multi_part"].includes(questionForm.type) && (
+                        <div>
+                          <Label htmlFor="correct_answer">
+                            {questionForm.type === "mcq" && "Correct Answer *"}
+                            {questionForm.type === "short" && "Sample Correct Answer"}
+                            {questionForm.type === "long" && "Sample Correct Answer"}
+                          </Label>
+                          {questionForm.type === "mcq" ? (
+                            <Select
+                              value={questionForm.correct_option_id}
+                              onValueChange={(value) => setQuestionForm({...questionForm, correct_option_id: value})}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue placeholder="Select the correct option" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {questionForm.options
+                                  .map((option, index) => {
+                                    const letter = String.fromCharCode(65 + index);
+                                    // Keep all 4 options even if empty, to maintain correct letter-to-index mapping
+                                    return (
+                                      <SelectItem key={letter} value={letter}>
+                                        {letter} - {option || "(empty)"}
+                                      </SelectItem>
+                                    );
+                                  })}
+                              </SelectContent>
+                            </Select>
+                          ) : questionForm.type === "long" ? (
+                            <Textarea
+                              id="correct_answer"
+                              value={questionForm.correct_answer}
+                              onChange={(e) => setQuestionForm({...questionForm, correct_answer: e.target.value})}
+                              placeholder="Enter sample correct answer"
+                              className="mt-1 min-h-[120px]"
+                              spellCheck={true}
+                            />
+                          ) : (
+                            <Input
+                              id="correct_answer"
+                              value={questionForm.correct_answer}
+                              onChange={(e) => setQuestionForm({...questionForm, correct_answer: e.target.value})}
+                              placeholder="Enter correct answer"
+                              className="mt-1"
+                              spellCheck={true}
+                            />
+                          )}
+                        </div>
+                      )}
 
                       <div>
                         <Label htmlFor="slide_number">Slide Number</Label>
@@ -740,6 +1275,24 @@ function QuestionsPageContent() {
                           placeholder="Optional"
                           className="mt-1"
                         />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="points">Points *</Label>
+                        <Input
+                          id="points"
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={questionForm.points}
+                          onChange={(e) => setQuestionForm({...questionForm, points: e.target.value})}
+                          placeholder="1.0"
+                          required
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Points awarded for correct answer
+                        </p>
                       </div>
 
                       <div>
@@ -804,37 +1357,122 @@ function QuestionsPageContent() {
                   </Select>
                 </div>
 
+                {/* Module Statistics */}
+                {filteredQuestions.length > 0 && (
+                  <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/50 dark:to-blue-900/50 border-blue-200 dark:border-blue-800">
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-blue-700 dark:text-blue-300 font-medium">Total Questions</p>
+                            <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">{filteredQuestions.length}</p>
+                          </div>
+                          <HelpCircle className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/50 dark:to-amber-900/50 border-amber-200 dark:border-amber-800">
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">Total Points</p>
+                            <p className="text-3xl font-bold text-amber-900 dark:text-amber-100">
+                              {filteredQuestions.reduce((sum, q) => sum + (q.points || 1.0), 0).toFixed(1)}
+                            </p>
+                          </div>
+                          <Trophy className="w-8 h-8 text-amber-600 dark:text-amber-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/50 dark:to-purple-900/50 border-purple-200 dark:border-purple-800">
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-purple-700 dark:text-purple-300 font-medium">Question Types</p>
+                            <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">
+                              {[...new Set(filteredQuestions.map(q => q.type))].length}
+                            </p>
+                          </div>
+                          <Sparkles className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
                 {/* Questions List */}
-                <div className="space-y-4">
-                  {filteredQuestions.map((question, index) => (
-                    <Card key={question.id} className="border-0 shadow-sm bg-white dark:bg-slate-900/50 hover:shadow-md transition-all duration-200">
-                      <CardContent className="p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-4 flex-1 min-w-0">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                {loadingQuestions ? (
+                  <div className="space-y-4">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Card key={i} className="border-0 shadow-sm bg-white dark:bg-slate-900/50">
+                        <CardContent className="p-6">
+                          <div className="flex items-start gap-4">
+                            <div className="flex flex-col items-center gap-2">
+                              <Skeleton className="w-10 h-10 rounded-full" />
+                              <Skeleton className="w-5 h-5 rounded" />
+                            </div>
+                            <div className="flex-1 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <Skeleton className="h-5 w-24 rounded" />
+                                <Skeleton className="h-5 w-20 rounded" />
+                              </div>
+                              <Skeleton className="h-5 w-full" />
+                              <Skeleton className="h-4 w-3/4" />
+                              <div className="space-y-2">
+                                <Skeleton className="h-10 w-full rounded-lg" />
+                                <Skeleton className="h-10 w-full rounded-lg" />
+                                <Skeleton className="h-10 w-full rounded-lg" />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Skeleton className="h-8 w-20" />
+                              <Skeleton className="h-8 w-20" />
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-4">
+                      {filteredQuestions.map((question, index) => (
+                        <Card key={question.id} className="border-0 shadow-sm bg-white dark:bg-slate-900/50 hover:shadow-md transition-all duration-200">
+                          <CardContent className="p-4 sm:p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+                          <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                        <div className="flex flex-col items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white font-bold text-xs sm:text-sm">
                             {index + 1}
                           </div>
                           {getQuestionIcon(question.type)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge className={`text-xs ${getQuestionTypeBadge(question.type)}`}>
-                              {question.type.toUpperCase()}
+                          <div className="flex items-center gap-1.5 sm:gap-2 mb-2 flex-wrap">
+                            <Badge className={`text-[10px] sm:text-xs ${getQuestionTypeBadge(question.type)}`}>
+                              {getQuestionTypeLabel(question.type)}
                             </Badge>
+                            {question.points !== null && question.points !== undefined && (
+                              <Badge variant="outline" className="text-[10px] sm:text-xs bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                <Trophy className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
+                                {question.points} {question.points === 1 ? 'pt' : 'pts'}
+                              </Badge>
+                            )}
                             {question.slide_number && (
-                              <Badge variant="outline" className="text-xs">
+                              <Badge variant="outline" className="text-[10px] sm:text-xs">
                                 Slide {question.slide_number}
                               </Badge>
                             )}
                             {question.bloom_taxonomy && (
-                              <Badge variant="secondary" className="text-xs">
-                                <Brain className="w-3 h-3 mr-1" />
+                              <Badge variant="secondary" className="text-[10px] sm:text-xs">
+                                <Brain className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
                                 {question.bloom_taxonomy}
                               </Badge>
                             )}
                           </div>
-                          <p className="text-foreground font-medium mb-3 leading-relaxed whitespace-pre-wrap">
+                          <p className="text-sm sm:text-base text-foreground font-medium mb-3 leading-relaxed whitespace-pre-wrap">
                             {question.text}
                           </p>
                           {question.image_url && (
@@ -847,9 +1485,82 @@ function QuestionsPageContent() {
                             </div>
                           )}
                           {question.type === "mcq" && question.options && typeof question.options === 'object' && (
-                            <div className="space-y-2 text-sm">
+                            <div className="space-y-2 text-xs sm:text-sm">
                               {Object.entries(question.options).map(([key, option]) => {
                                 const isCorrect = key === (question.correct_option_id || question.correct_answer);
+                                return (
+                                  <div
+                                    key={key}
+                                    className={`flex items-center gap-2 p-2 sm:p-3 rounded-lg border ${
+                                      isCorrect
+                                        ? 'bg-green-50 dark:bg-green-950/50 border-green-300 dark:border-green-700'
+                                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                                    }`}
+                                  >
+                                    <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold flex-shrink-0 ${
+                                      isCorrect
+                                        ? 'bg-green-600 dark:bg-green-500 text-white'
+                                        : 'bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                                    }`}>
+                                      {key}
+                                    </span>
+                                    <span className={`flex-1 whitespace-pre-wrap min-w-0 ${isCorrect ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>{option}</span>
+                                    {isCorrect && (
+                                      <div className="ml-auto flex items-center gap-1 sm:gap-1.5 text-green-700 dark:text-green-400 flex-shrink-0">
+                                        <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Correct</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Fill-in-the-Blank Correct Answers Display */}
+                          {question.type === "fill_blank" && question.extended_config && question.extended_config.blanks && (
+                            <div className="mt-3 space-y-2">
+                              <div className="text-xs font-bold text-yellow-700 dark:text-yellow-400 mb-2 flex items-center gap-2">
+                                <CheckCircle className="w-4 h-4" />
+                                <span>Correct Answers:</span>
+                              </div>
+                              {question.extended_config.blanks.map((blank, index) => {
+                                const parts = question.text.split('___');
+                                const beforeText = parts[index]?.slice(-15) || '';
+                                const afterText = parts[index + 1]?.slice(0, 15) || '';
+
+                                return (
+                                  <div key={index} className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                    <div className="flex items-start gap-2">
+                                      <span className="w-6 h-6 rounded-full bg-yellow-500 dark:bg-yellow-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                        {index + 1}
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-1 font-mono truncate">
+                                          <span className="opacity-60">...{beforeText}</span>
+                                          <span className="px-1 text-yellow-600 dark:text-yellow-400 font-bold">___</span>
+                                          <span className="opacity-60">{afterText}...</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                          {(blank.correct_answers || []).map((answer, ansIndex) => (
+                                            <span key={ansIndex} className="px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 text-xs font-medium rounded border border-green-300 dark:border-green-700">
+                                              {answer}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* MCQ Multiple Correct Answers Display */}
+                          {question.type === "mcq_multiple" && question.options && question.extended_config && question.extended_config.correct_option_ids && (
+                            <div className="space-y-2 text-sm">
+                              {Object.entries(question.options).map(([key, option]) => {
+                                const isCorrect = question.extended_config.correct_option_ids.includes(key);
                                 return (
                                   <div
                                     key={key}
@@ -859,7 +1570,7 @@ function QuestionsPageContent() {
                                         : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                     }`}
                                   >
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                    <span className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${
                                       isCorrect
                                         ? 'bg-green-600 dark:bg-green-500 text-white'
                                         : 'bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
@@ -878,7 +1589,49 @@ function QuestionsPageContent() {
                               })}
                             </div>
                           )}
-                          {question.type !== "mcq" && question.correct_answer && (
+
+                          {/* Multi-Part Questions Display */}
+                          {question.type === "multi_part" && question.extended_config && question.extended_config.sub_questions && (
+                            <div className="mt-3 space-y-3">
+                              <div className="text-xs font-bold text-purple-700 dark:text-purple-400 mb-2 flex items-center gap-2">
+                                <CheckCircle className="w-4 h-4" />
+                                <span>Sub-Questions:</span>
+                              </div>
+                              {question.extended_config.sub_questions.map((subQ, index) => (
+                                <div key={index} className="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
+                                  <div className="flex items-start gap-2">
+                                    <span className="px-2 py-1 rounded bg-purple-500 dark:bg-purple-600 text-white text-xs font-bold flex-shrink-0">
+                                      {subQ.id}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">{subQ.text}</p>
+                                      {subQ.type === 'mcq' && subQ.options && (
+                                        <div className="space-y-1 text-xs">
+                                          {Object.entries(subQ.options).map(([key, opt]) => {
+                                            const isCorrect = key === subQ.correct_option_id;
+                                            return (
+                                              <div key={key} className={`flex items-center gap-2 p-2 rounded ${isCorrect ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                <span className="font-bold">{key}.</span>
+                                                <span className="flex-1">{opt}</span>
+                                                {isCorrect && <CheckCircle className="w-3 h-3" />}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      {subQ.type !== 'mcq' && subQ.correct_answer && (
+                                        <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded text-xs">
+                                          <span className="text-green-700 dark:text-green-400 font-medium">Answer: {subQ.correct_answer}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {question.type !== "mcq" && question.type !== "fill_blank" && question.type !== "mcq_multiple" && question.type !== "multi_part" && question.correct_answer && (
                             <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/50 border border-green-300 dark:border-green-700 rounded-lg">
                               <div className="flex items-start gap-2">
                                 <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-500 mt-0.5 flex-shrink-0" />
@@ -903,52 +1656,55 @@ function QuestionsPageContent() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          variant="outline" 
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => openEditDialog(question)}
+                          className="h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm"
                         >
-                          <Edit3 className="h-4 w-4 mr-1" />
-                          Edit
+                          <Edit3 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                          <span className="hidden sm:inline">Edit</span>
                         </Button>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950 h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm"
                           onClick={() => handleDelete(question.id)}
                         >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
+                          <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                          <span className="hidden sm:inline">Delete</span>
                         </Button>
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-                  ))}
-                </div>
+                        </Card>
+                      ))}
+                    </div>
 
-                {filteredQuestions.length === 0 && (
-              <Card className="border-2 border-dashed border-muted-foreground/25 bg-muted/5">
-                <CardContent className="py-16 text-center">
-                  <HelpCircle className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <h3 className="text-lg font-medium text-muted-foreground mb-2">
-                    No questions found
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {searchTerm || filterType !== "all" 
-                      ? "Try adjusting your search or filter criteria" 
-                      : "Use the form on the left to create your first question"
-                    }
-                  </p>
-                  <div className="text-xs text-muted-foreground/70 mb-4 p-2 bg-muted/30 rounded">
-                    Debug: Total questions: {questions.length}, Filtered: {filteredQuestions.length}<br/>
-                    Module: {currentModule?.name} (ID: {currentModule?.id})<br/>
-                    Search: &quot;{searchTerm}&quot;, Filter: {filterType}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                    {filteredQuestions.length === 0 && (
+                      <Card className="border-2 border-dashed border-muted-foreground/25 bg-muted/5">
+                        <CardContent className="py-16 text-center">
+                          <HelpCircle className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+                          <h3 className="text-lg font-medium text-muted-foreground mb-2">
+                            No questions found
+                          </h3>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            {searchTerm || filterType !== "all"
+                              ? "Try adjusting your search or filter criteria"
+                              : "Use the form on the left to create your first question"
+                            }
+                          </p>
+                          <div className="text-xs text-muted-foreground/70 mb-4 p-2 bg-muted/30 rounded">
+                            Debug: Total questions: {questions.length}, Filtered: {filteredQuestions.length}<br/>
+                            Module: {currentModule?.name} (ID: {currentModule?.id})<br/>
+                            Search: &quot;{searchTerm}&quot;, Filter: {filterType}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
+                )}
             </div>
           </div>
         </div>
@@ -983,14 +1739,27 @@ function QuestionsPageContent() {
 
                 <div>
                   <Label htmlFor="edit-type">Question Type *</Label>
-                  <Select value={questionForm.type} onValueChange={(value) => setQuestionForm({...questionForm, type: value})}>
+                  <Select value={questionForm.type} onValueChange={(value) => {
+                    const newForm = {
+                      ...questionForm,
+                      type: value,
+                      points: getDefaultPoints(value).toString(),
+                      blanks: value === 'fill_blank' ? (questionForm.blanks || []) : [],
+                      correct_option_ids: value === 'mcq_multiple' ? (questionForm.correct_option_ids || []) : [],
+                      sub_questions: value === 'multi_part' ? (questionForm.sub_questions || []) : []
+                    };
+                    setQuestionForm(newForm);
+                  }}>
                     <SelectTrigger className="mt-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="mcq">Multiple Choice</SelectItem>
+                      <SelectItem value="mcq">Multiple Choice (Single Answer)</SelectItem>
+                      <SelectItem value="mcq_multiple">Multiple Choice (Multiple Answers)</SelectItem>
+                      <SelectItem value="fill_blank">Fill in the Blanks</SelectItem>
                       <SelectItem value="short">Short Answer</SelectItem>
                       <SelectItem value="long">Long Answer</SelectItem>
+                      {/* <SelectItem value="multi_part">Multi-Part Question</SelectItem> */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1000,7 +1769,7 @@ function QuestionsPageContent() {
                   <Textarea
                     id="edit-text"
                     value={questionForm.text}
-                    onChange={(e) => setQuestionForm({...questionForm, text: e.target.value})}
+                    onChange={(e) => handleQuestionTextChange(e.target.value)}
                     placeholder="Enter your question..."
                     required
                     rows={3}
@@ -1099,6 +1868,272 @@ function QuestionsPageContent() {
                   </div>
                 )}
 
+                {/* MCQ Multiple - Checkboxes for multiple correct answers */}
+                {questionForm.type === "mcq_multiple" && (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Answer Options *</Label>
+                      <div className="space-y-2 mt-2">
+                        {questionForm.options.map((option, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-xs font-medium text-green-600 dark:text-green-400">
+                              {String.fromCharCode(65 + index)}
+                            </span>
+                            <Input
+                              value={option}
+                              onChange={(e) => handleOptionChange(index, e.target.value)}
+                              placeholder={`Option ${index + 1}`}
+                              className="flex-1 text-sm"
+                              spellCheck={true}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Correct Answers * (Select all that apply)</Label>
+                      <div className="space-y-2 mt-2 p-3 border rounded-lg">
+                        {(questionForm.options || []).map((option, index) => {
+                          const letter = String.fromCharCode(65 + index);
+                          const isChecked = (questionForm.correct_option_ids || []).includes(letter);
+                          return (
+                            <div key={letter} className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                id={`edit-correct-${letter}`}
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const currentIds = questionForm.correct_option_ids || [];
+                                  const newCorrectIds = e.target.checked
+                                    ? [...currentIds, letter]
+                                    : currentIds.filter(id => id !== letter);
+                                  setQuestionForm({...questionForm, correct_option_ids: newCorrectIds});
+                                }}
+                                className="h-4 w-4 text-green-600 focus:ring-green-500"
+                              />
+                              <Label htmlFor={`edit-correct-${letter}`} className="cursor-pointer flex-1">
+                                {letter} - {option || "(empty)"}
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Fill in the Blanks */}
+                {questionForm.type === "fill_blank" && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                        <strong>Auto-detection:</strong> Use <strong>___</strong> (three underscores) in your question text to mark blanks.
+                        Blanks will be automatically detected and you can define correct answers for each below.
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Blanks Configuration</Label>
+                      <div className="space-y-3 mt-2">
+                        {(questionForm.blanks || []).map((blank, index) => (
+                          <div key={index} className="p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-sm">Blank {index + 1}</span>
+                            </div>
+                            {blank.context && (
+                              <div className="mb-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs font-mono">
+                                <span className="text-gray-600 dark:text-gray-400">{blank.context.before}</span>
+                                <span className="px-2 py-1 bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 font-bold">___</span>
+                                <span className="text-gray-600 dark:text-gray-400">{blank.context.after}</span>
+                              </div>
+                            )}
+                            <div className="space-y-2">
+                              <Input
+                                placeholder="Correct answer (comma-separated for multiple)"
+                                value={(blank.correct_answers || []).join(', ')}
+                                onChange={(e) => {
+                                  const newBlanks = [...(questionForm.blanks || [])];
+                                  newBlanks[index].correct_answers = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                  setQuestionForm({...questionForm, blanks: newBlanks});
+                                }}
+                                className="text-sm"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        {questionForm.blanks.length === 0 && (
+                          <div className="text-center py-4 text-sm text-gray-500">
+                            No blanks detected. Add <strong>___</strong> (three underscores) in your question text above.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Multi-Part Questions */}
+                {questionForm.type === "multi_part" && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                      <p className="text-sm text-purple-800 dark:text-purple-200">
+                        Create sub-questions (e.g., 1a, 1b, 1c) with different types (MCQ, Short, Long)
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Sub-Questions</Label>
+                      <div className="space-y-4 mt-2">
+                        {(questionForm.sub_questions || []).map((subQ, index) => (
+                          <div key={index} className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                            <div className="flex items-center justify-between mb-3">
+                              <Input
+                                placeholder="ID (e.g., 1a)"
+                                value={subQ.id}
+                                onChange={(e) => {
+                                  const newSubQs = [...(questionForm.sub_questions || [])];
+                                  newSubQs[index].id = e.target.value;
+                                  setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                }}
+                                className="w-24 text-sm"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const newSubQs = (questionForm.sub_questions || []).filter((_, i) => i !== index);
+                                  setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              <Select
+                                value={subQ.type}
+                                onValueChange={(value) => {
+                                  const newSubQs = [...(questionForm.sub_questions || [])];
+                                  newSubQs[index].type = value;
+                                  setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                }}
+                              >
+                                <SelectTrigger className="text-sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="mcq">MCQ</SelectItem>
+                                  <SelectItem value="short">Short</SelectItem>
+                                  <SelectItem value="long">Long</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Textarea
+                                placeholder="Sub-question text"
+                                value={subQ.text}
+                                onChange={(e) => {
+                                  const newSubQs = [...(questionForm.sub_questions || [])];
+                                  newSubQs[index].text = e.target.value;
+                                  setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                }}
+                                rows={2}
+                                className="text-sm"
+                              />
+                              {subQ.type === 'mcq' && (
+                                <>
+                                  <div>
+                                    <Label className="text-xs">Answer Options *</Label>
+                                    <div className="space-y-2 mt-2">
+                                      {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
+                                        const optionValue = subQ.options?.[letter] || '';
+                                        return (
+                                          <div key={letter} className="flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-xs font-medium text-purple-600 dark:text-purple-400">
+                                              {letter}
+                                            </span>
+                                            <Input
+                                              value={optionValue}
+                                              onChange={(e) => {
+                                                const newSubQs = [...(questionForm.sub_questions || [])];
+                                                const currentOptions = newSubQs[index].options || {};
+                                                newSubQs[index].options = {
+                                                  ...currentOptions,
+                                                  [letter]: e.target.value
+                                                };
+                                                setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                              }}
+                                              placeholder={`Option ${letter}`}
+                                              className="flex-1 text-xs"
+                                            />
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Correct Answer *</Label>
+                                    <Select
+                                      value={subQ.correct_option_id || ''}
+                                      onValueChange={(value) => {
+                                        const newSubQs = [...(questionForm.sub_questions || [])];
+                                        newSubQs[index].correct_option_id = value;
+                                        setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                      }}
+                                    >
+                                      <SelectTrigger className="mt-1 text-xs">
+                                        <SelectValue placeholder="Select correct option" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {['A', 'B', 'C', 'D'].map((letter) => {
+                                          const optionText = subQ.options?.[letter] || `Option ${letter}`;
+                                          return (
+                                            <SelectItem key={letter} value={letter}>
+                                              {letter} - {optionText}
+                                            </SelectItem>
+                                          );
+                                        })}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </>
+                              )}
+                              {(subQ.type === 'short' || subQ.type === 'long') && (
+                                <div>
+                                  <Label className="text-xs">Correct Answer *</Label>
+                                  <Textarea
+                                    value={subQ.correct_answer || ''}
+                                    onChange={(e) => {
+                                      const newSubQs = [...(questionForm.sub_questions || [])];
+                                      newSubQs[index].correct_answer = e.target.value;
+                                      setQuestionForm({...questionForm, sub_questions: newSubQs});
+                                    }}
+                                    placeholder="Enter the correct answer or acceptable answer"
+                                    rows={subQ.type === 'long' ? 4 : 2}
+                                    className="text-xs mt-1"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const currentSubQs = questionForm.sub_questions || [];
+                            setQuestionForm({
+                              ...questionForm,
+                              sub_questions: [...currentSubQs, { id: '', type: 'mcq', text: '', points: 1, options: { A: '', B: '', C: '', D: '' }, correct_option_id: null }]
+                            });
+                          }}
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Sub-Question
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Only show correct answer field for traditional question types */}
+                {!["mcq_multiple", "fill_blank", "multi_part"].includes(questionForm.type) && (
                 <div>
                   <Label htmlFor="edit-correct_answer">Correct Answer {questionForm.type === "mcq" && "*"}</Label>
                   {questionForm.type === "mcq" ? (
@@ -1147,6 +2182,7 @@ function QuestionsPageContent() {
                     />
                   )}
                 </div>
+                )}
 
                 <div>
                   <Label htmlFor="edit-slide_number">Slide Number</Label>
@@ -1158,6 +2194,24 @@ function QuestionsPageContent() {
                     placeholder="Optional"
                     className="mt-1"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-points">Points *</Label>
+                  <Input
+                    id="edit-points"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={questionForm.points}
+                    onChange={(e) => setQuestionForm({...questionForm, points: e.target.value})}
+                    placeholder="1.0"
+                    required
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Points awarded for correct answer
+                  </p>
                 </div>
 
                 <div>
@@ -1193,7 +2247,7 @@ function QuestionsPageContent() {
         </Drawer>
     </SidebarProvider>
   );
-}
+});
 
 export default function QuestionsPage() {
   return (

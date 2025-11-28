@@ -33,6 +33,10 @@ def get_modules_by_teacher(db: Session, teacher_id: str):
 
 # ✅ Create a new module
 def create_module(db: Session, payload: ModuleCreate) -> Module:
+    # Get default rubric template
+    from app.config.feedback_templates import get_template
+    default_rubric = get_template("default")["config"]
+
     new_module = Module(
         id=uuid4(),
         teacher_id=payload.teacher_id,
@@ -45,6 +49,7 @@ def create_module(db: Session, payload: ModuleCreate) -> Module:
         access_code=secrets.token_hex(3).upper(),
         instructions=payload.instructions,
         assignment_config=payload.assignment_config,
+        feedback_rubric=default_rubric,  # ✅ Assign default rubric on creation
         created_at=datetime.now(timezone.utc)
     )
     db.add(new_module)
@@ -58,6 +63,10 @@ def get_or_create_module(db: Session, teacher_id: str, module_name: str) -> Modu
     if module:
         return module
 
+    # Get default rubric template
+    from app.config.feedback_templates import get_template
+    default_rubric = get_template("default")["config"]
+
     new_module = Module(
         id=uuid4(),
         teacher_id=teacher_id,
@@ -65,6 +74,7 @@ def get_or_create_module(db: Session, teacher_id: str, module_name: str) -> Modu
         slug=slugify.slugify(module_name),
         access_code=secrets.token_hex(3).upper(),
         is_active=True,
+        feedback_rubric=default_rubric,  # ✅ Assign default rubric on creation
         created_at=datetime.now(timezone.utc)
     )
     db.add(new_module)

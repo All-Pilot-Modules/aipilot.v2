@@ -27,6 +27,15 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "documents")
 
+# === Email Configuration ===
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_FROM = os.getenv("EMAIL_FROM", EMAIL_USERNAME)
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "AI Pilot")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
 # === Environment Variable Validation ===
 def validate_required_env_vars():
     """Validate that all required environment variables are set."""

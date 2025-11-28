@@ -2,25 +2,35 @@ import { jwtDecode } from 'jwt-decode';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Helper function to add timeout to fetch requests
+const fetchWithTimeout = (url, options = {}, timeout = 10000) => {
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout - please check your connection')), timeout)
+    )
+  ]);
+};
+
 // Auth functions
 export const auth = {
   // Login function
   async login(identifier, password) {
-    console.log('Attempting login with URL:', `${API_BASE_URL}/api/auth/login`);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            identifier,
+            password,
+          }),
         },
-        body: JSON.stringify({
-          identifier,
-          password,
-        }),
-      });
-
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
+        10000 // 10 second timeout
+      );
 
       if (!response.ok) {
         let error;
@@ -29,20 +39,16 @@ export const auth = {
         } catch (e) {
           error = { detail: `HTTP ${response.status}: ${response.statusText}` };
         }
-        console.error('Login error response:', error);
         throw new Error(error.detail || 'Login failed');
       }
 
       const data = await response.json();
-      console.log('Login successful:', data);
 
       // Store tokens securely with HttpOnly, Secure, and SameSite flags
-      // Use secure cookies for production
       const isProduction = process.env.NODE_ENV === 'production';
       const cookieFlags = `path=/; max-age=${data.expires_in || 1800}; SameSite=Strict${isProduction ? '; Secure' : ''}`;
 
-      // Store access token in cookie (HttpOnly would need server-side setting)
-      // For now, we'll use a secure cookie without HttpOnly since we need JS access
+      // Store access token in cookie
       document.cookie = `token=${data.access_token}; ${cookieFlags}`;
 
       // Store refresh token securely (longer expiration)
@@ -58,9 +64,8 @@ export const auth = {
 
       return data;
     } catch (error) {
-      console.error('Login error:', error);
-      if (error.message.includes('fetch')) {
-        throw new Error('Unable to connect to server. Make sure the backend is running.');
+      if (error.message.includes('fetch') || error.message.includes('timeout')) {
+        throw new Error('Unable to connect to server. Please check your connection.');
       }
       throw error;
     }
@@ -69,13 +74,17 @@ export const auth = {
   // Register function
   async register(userData) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/register`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(userData),
         },
-        body: JSON.stringify(userData),
-      });
+        10000 // 10 second timeout
+      );
 
       if (!response.ok) {
         const error = await response.json();
@@ -85,7 +94,6 @@ export const auth = {
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Registration error:', error);
       throw error;
     }
   },
@@ -109,26 +117,29 @@ export const auth = {
     const token = this.getToken();
     if (!token) return null;
 
-    // First check sessionStorage for cached user data
+    // First check sessionStorage for cached user data (faster than API call)
     if (typeof window !== 'undefined') {
       const cachedUser = sessionStorage.getItem('user');
       if (cachedUser) {
         try {
           return JSON.parse(cachedUser);
         } catch (e) {
-          console.error('Error parsing cached user:', e);
           sessionStorage.removeItem('user');
         }
       }
     }
 
-    // If not in cache, fetch from API
+    // If not in cache, fetch from API with timeout
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/me`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
         },
-      });
+        8000 // 8 second timeout
+      );
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -147,7 +158,6 @@ export const auth = {
 
       return userData;
     } catch (error) {
-      console.error('Get current user error:', error);
       this.logout();
       return null;
     }
@@ -207,22 +217,22 @@ export const auth = {
   // Refresh access token using refresh token
   async refreshAccessToken() {
     const refreshToken = this.getRefreshToken();
-    if (!refreshToken) {
-      console.log('No refresh token available');
-      return null;
-    }
+    if (!refreshToken) return null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/refresh`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh_token: refreshToken }),
         },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
+        8000 // 8 second timeout
+      );
 
       if (!response.ok) {
-        console.error('Token refresh failed');
         this.logout();
         return null;
       }
@@ -234,10 +244,8 @@ export const auth = {
       const cookieFlags = `path=/; max-age=${data.expires_in || 1800}; SameSite=Strict${isProduction ? '; Secure' : ''}`;
       document.cookie = `token=${data.access_token}; ${cookieFlags}`;
 
-      console.log('Access token refreshed successfully');
       return data.access_token;
     } catch (error) {
-      console.error('Token refresh error:', error);
       this.logout();
       return null;
     }
@@ -257,14 +265,13 @@ export const apiClient = {
 
         // If token expires in less than 5 minutes, refresh it
         if (timeUntilExpiry < 300) {
-          console.log('Token expiring soon, refreshing...');
           const newToken = await auth.refreshAccessToken();
           if (newToken) {
             token = newToken;
           }
         }
       } catch (error) {
-        console.error('Token validation error:', error);
+        // Token validation failed, continue with existing token
       }
     }
 
@@ -277,7 +284,7 @@ export const apiClient = {
       ...options,
     };
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, config, 15000);
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -286,7 +293,7 @@ export const apiClient = {
         if (newToken) {
           // Retry request with new token
           config.headers['Authorization'] = `Bearer ${newToken}`;
-          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, config);
+          const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, config, 15000);
           if (retryResponse.ok) {
             return retryResponse.json();
           }
@@ -297,7 +304,23 @@ export const apiClient = {
         throw new Error('Authentication required');
       }
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+
+      // Handle FastAPI validation errors (array of objects)
+      let errorMessage = `HTTP ${response.status}`;
+      if (error.detail) {
+        if (Array.isArray(error.detail)) {
+          // FastAPI validation error format: [{loc: [...], msg: "...", type: "..."}]
+          errorMessage = error.detail
+            .map(err => `${err.loc?.join('.')}: ${err.msg}`)
+            .join('; ');
+        } else if (typeof error.detail === 'string') {
+          errorMessage = error.detail;
+        } else {
+          errorMessage = JSON.stringify(error.detail);
+        }
+      }
+
+      throw new Error(errorMessage);
     }
 
     return response.json();

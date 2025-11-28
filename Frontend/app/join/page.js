@@ -26,8 +26,14 @@ export default function JoinModule() {
   const [enrolledModule, setEnrolledModule] = useState(null);
 
   const handleConsentSubmitted = (consentStatus) => {
-    // Mark consent as submitted in sessionStorage
+    // Mark consent as submitted in both localStorage and sessionStorage
     if (enrolledModule) {
+      // Store in localStorage (persists across sessions)
+      const consentKey = `consent_${enrolledModule.id}_${formData.bannerId.trim()}`;
+      localStorage.setItem(consentKey, 'true');
+      console.log('✅ Consent saved to localStorage');
+
+      // Also update sessionStorage
       const accessData = JSON.parse(sessionStorage.getItem('student_module_access') || '{}');
       accessData.consentSubmitted = true;
       accessData.consentStatus = consentStatus;

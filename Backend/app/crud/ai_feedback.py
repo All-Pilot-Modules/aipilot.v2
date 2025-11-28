@@ -25,6 +25,10 @@ def create_feedback(db: Session, feedback: AIFeedbackCreate) -> AIFeedback:
         existing.is_correct = feedback.is_correct
         existing.score = feedback.score
         existing.feedback_data = feedback.feedback_data
+        existing.points_earned = feedback.points_earned
+        existing.points_possible = feedback.points_possible
+        existing.criterion_scores = feedback.criterion_scores
+        existing.confidence_level = feedback.confidence_level
         db.commit()
         db.refresh(existing)
         logger.info(f"✅ CRUD: Updated feedback ID: {existing.id}")
@@ -36,7 +40,11 @@ def create_feedback(db: Session, feedback: AIFeedbackCreate) -> AIFeedback:
         answer_id=feedback.answer_id,
         is_correct=feedback.is_correct,
         score=feedback.score,
-        feedback_data=feedback.feedback_data
+        feedback_data=feedback.feedback_data,
+        points_earned=feedback.points_earned,
+        points_possible=feedback.points_possible,
+        criterion_scores=feedback.criterion_scores,
+        confidence_level=feedback.confidence_level
     )
 
     try:
@@ -59,6 +67,10 @@ def create_feedback(db: Session, feedback: AIFeedbackCreate) -> AIFeedback:
             existing.is_correct = feedback.is_correct
             existing.score = feedback.score
             existing.feedback_data = feedback.feedback_data
+            existing.points_earned = feedback.points_earned
+            existing.points_possible = feedback.points_possible
+            existing.criterion_scores = feedback.criterion_scores
+            existing.confidence_level = feedback.confidence_level
             db.commit()
             db.refresh(existing)
             logger.info(f"✅ CRUD: Updated existing feedback after race condition, ID: {existing.id}")

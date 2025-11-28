@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
+    "dev:turbo": "next dev --turbopack",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -35,6 +37,7 @@
     "@vercel/analytics": "^1.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "critters": "^0.0.23",
     "dotenv": "^16.5.0",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
@@ -48,13 +51,16 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.15.3",
     "sonner": "^2.0.3",
+    "swr": "^2.3.6",
     "tailwind-merge": "^3.2.0",
     "vaul": "^1.1.2",
     "zod": "^3.24.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@next/bundle-analyzer": "^16.0.3",
     "@tailwindcss/postcss": "^4",
+    "@types/react": "19.2.5",
     "eslint": "^9",
     "eslint-config-next": "15.3.1",
     "tailwindcss": "^4",

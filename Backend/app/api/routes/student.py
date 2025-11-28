@@ -27,56 +27,153 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# 🎯 Background task to generate feedback asynchronously
+# 🎯 Background task to generate feedback asynchronously with PARALLEL processing
 def generate_feedback_background(student_id: str, module_id: str, attempt: int, answer_ids: List[str]):
     """
-    Background task to generate AI feedback for multiple answers.
-    This runs asynchronously so the user doesn't have to wait.
+    Background task to generate AI feedback for multiple answers IN PARALLEL.
+    This runs asynchronously and generates feedback for all questions concurrently
+    to significantly reduce total generation time.
     """
+    import concurrent.futures
+    import time
     from app.database import SessionLocal
     from app.services.ai_feedback import AIFeedbackService
     from app.models.student_answer import StudentAnswer
 
-    # Create a new database session for this background task
-    db = SessionLocal()
+    def generate_single_feedback(answer_id: str):
+        """Generate feedback for a single answer (runs in thread pool)"""
+        # Each thread gets its own database session
+        db = SessionLocal()
+        try:
+            # Get the answer
+            answer = db.query(StudentAnswer).filter(StudentAnswer.id == answer_id).first()
+            if not answer:
+                logger.error(f"❌ Answer {answer_id} not found")
+                return {"success": False, "answer_id": answer_id, "error": "Answer not found"}
+
+            logger.info(f"🔄 Generating feedback for question {answer.question_id}, answer {answer_id}")
+
+            # Generate feedback
+            feedback_service = AIFeedbackService()
+            feedback = feedback_service.generate_instant_feedback(
+                db=db,
+                student_answer=answer,
+                question_id=str(answer.question_id),
+                module_id=module_id
+            )
+
+            logger.info(f"✅ Feedback generated for question {answer.question_id}")
+            return {"success": True, "answer_id": answer_id, "question_id": str(answer.question_id)}
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate feedback for answer {answer_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "answer_id": answer_id, "error": str(e)}
+        finally:
+            db.close()
 
     try:
-        logger.info(f"🎯 Starting background feedback generation for {len(answer_ids)} answers")
-        feedback_service = AIFeedbackService()
+        logger.info(f"🎯 Starting PARALLEL background feedback generation for {len(answer_ids)} answers")
+        start_time = time.time()
 
-        for answer_id in answer_ids:
-            try:
-                # Get the answer
-                answer = db.query(StudentAnswer).filter(StudentAnswer.id == answer_id).first()
-                if not answer:
-                    logger.error(f"❌ Answer {answer_id} not found")
-                    continue
+        # Use ThreadPoolExecutor to generate feedback in parallel
+        # Max workers = min(10, number of questions) to avoid overwhelming the API
+        max_workers = min(10, len(answer_ids))
+        logger.info(f"🚀 Using {max_workers} parallel threads for feedback generation")
 
-                logger.info(f"🔄 Generating feedback for question {answer.question_id}, answer {answer_id}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all feedback generation tasks
+            future_to_answer = {
+                executor.submit(generate_single_feedback, answer_id): answer_id
+                for answer_id in answer_ids
+            }
 
-                # Generate feedback
-                feedback = feedback_service.generate_instant_feedback(
-                    db=db,
-                    student_answer=answer,
-                    question_id=str(answer.question_id),
-                    module_id=module_id
-                )
+            # Wait for all tasks to complete
+            completed = 0
+            failed = 0
+            for future in concurrent.futures.as_completed(future_to_answer):
+                answer_id = future_to_answer[future]
+                try:
+                    result = future.result()
+                    if result["success"]:
+                        completed += 1
+                        logger.info(f"✅ [{completed}/{len(answer_ids)}] Feedback completed for {result['question_id']}")
+                    else:
+                        failed += 1
+                        logger.error(f"❌ [{completed + failed}/{len(answer_ids)}] Feedback failed for {answer_id}")
+                except Exception as exc:
+                    failed += 1
+                    logger.error(f"❌ Task generated exception for {answer_id}: {exc}")
 
-                logger.info(f"✅ Feedback generated for question {answer.question_id}")
+        elapsed_time = time.time() - start_time
+        logger.info(f"✅ PARALLEL feedback generation completed for attempt {attempt}")
+        logger.info(f"📊 Results: {completed} succeeded, {failed} failed out of {len(answer_ids)} total")
+        logger.info(f"⏱️  Total time: {elapsed_time:.2f} seconds ({elapsed_time/len(answer_ids):.2f}s per question average)")
 
-            except Exception as e:
-                logger.error(f"❌ Failed to generate feedback for answer {answer_id}: {str(e)}")
-                import traceback
-                traceback.print_exc()
+        # Calculate total score for this test submission
+        logger.info(f"🔢 Calculating total score for attempt {attempt}")
+        db = SessionLocal()
+        try:
+            from app.models.ai_feedback import AIFeedback
+            from app.models.question import Question
+            from app.models.test_submission import TestSubmission
+            from uuid import UUID
 
-        logger.info(f"✅ Background feedback generation completed for attempt {attempt}")
+            # Get all answers for this attempt to get their questions
+            answers = db.query(StudentAnswer).filter(
+                StudentAnswer.student_id == student_id,
+                StudentAnswer.module_id == UUID(module_id),
+                StudentAnswer.attempt == attempt
+            ).all()
+
+            total_points_possible = 0.0
+            total_points_earned = 0.0
+
+            for answer in answers:
+                # Get the question to know points possible
+                question = db.query(Question).filter(Question.id == answer.question_id).first()
+                if question:
+                    total_points_possible += question.points
+
+                    # Get the feedback for this answer
+                    feedback = db.query(AIFeedback).filter(
+                        AIFeedback.answer_id == answer.id
+                    ).first()
+
+                    if feedback and feedback.points_earned is not None:
+                        total_points_earned += feedback.points_earned
+
+            # Calculate percentage
+            percentage_score = (total_points_earned / total_points_possible * 100) if total_points_possible > 0 else 0
+
+            # Update the test submission
+            submission = db.query(TestSubmission).filter(
+                TestSubmission.student_id == student_id,
+                TestSubmission.module_id == UUID(module_id),
+                TestSubmission.attempt == attempt
+            ).first()
+
+            if submission:
+                submission.total_points_possible = total_points_possible
+                submission.total_points_earned = total_points_earned
+                submission.percentage_score = percentage_score
+                db.commit()
+                logger.info(f"✅ Test score updated: {total_points_earned}/{total_points_possible} points ({percentage_score:.1f}%)")
+            else:
+                logger.warning(f"⚠️  Test submission not found for attempt {attempt}")
+
+        except Exception as score_error:
+            logger.error(f"❌ Failed to calculate total score: {str(score_error)}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
 
     except Exception as e:
         logger.error(f"❌ Background feedback generation failed: {str(e)}")
         import traceback
         traceback.print_exc()
-    finally:
-        db.close()
 
 
 # 🔍 Join module with access code
@@ -454,13 +551,19 @@ def get_module_feedback(
 ):
     """
     Get all AI feedback for a student in a module (student-friendly view)
-    Returns filtered feedback without technical metadata
+    Returns filtered feedback without technical metadata, including teacher grades if available
+    IMPORTANT: Also includes teacher-only grades (where teacher graded but no AI feedback exists)
     """
     from app.crud.ai_feedback import get_student_module_feedback
     from app.models.student_answer import StudentAnswer
+    from app.models.teacher_grade import TeacherGrade
+    from app.models.question import Question
 
     # Get all feedback for student
     feedback_list = get_student_module_feedback(db, student_id, module_id)
+
+    # Track which answer_ids we've processed (to avoid duplicates)
+    processed_answer_ids = set()
 
     # Transform to student-friendly format
     student_feedback = []
@@ -469,6 +572,13 @@ def get_module_feedback(
         answer = db.query(StudentAnswer).filter(StudentAnswer.id == feedback.answer_id).first()
         if not answer:
             continue
+
+        processed_answer_ids.add(feedback.answer_id)
+
+        # Check if teacher has graded this answer
+        teacher_grade = db.query(TeacherGrade).filter(
+            TeacherGrade.answer_id == feedback.answer_id
+        ).first()
 
         # Extract only student-relevant fields from feedback_data
         data = feedback.feedback_data or {}
@@ -487,12 +597,81 @@ def get_module_feedback(
             "strengths": data.get("strengths"),
             "weaknesses": data.get("weaknesses"),
             "generated_at": feedback.generated_at.isoformat() if feedback.generated_at else None,
+            # Points and rubric-based scoring
+            "points_earned": feedback.points_earned,
+            "points_possible": feedback.points_possible,
+            "criterion_scores": feedback.criterion_scores,  # Rubric breakdown
             # Only show RAG usage as boolean, not sources
             "has_course_materials": data.get("used_rag", False),
             # For MCQ, include answer info
             "selected_option": data.get("selected_option"),
             "correct_option": data.get("correct_option"),
             "available_options": data.get("available_options"),
+            # For new question types, include grading details
+            "grading_details": data.get("grading_details"),  # blank_results, sub_results, etc.
+            "selected_options": data.get("selected_options"),  # For MCQ Multiple
+            "sub_results": data.get("sub_results"),  # For Multi-Part
+            # Teacher grade if available
+            "teacher_grade": {
+                "points_awarded": teacher_grade.points_awarded,
+                "feedback_text": teacher_grade.feedback_text,
+                "graded_at": teacher_grade.graded_at.isoformat() if teacher_grade.graded_at else None
+            } if teacher_grade else None,
+            "is_teacher_graded": teacher_grade is not None
+        }
+
+        student_feedback.append(student_view)
+
+    # IMPORTANT: Also get teacher grades that don't have AI feedback yet
+    # This happens when teacher manually grades without AI feedback being generated
+    teacher_only_grades = db.query(TeacherGrade).filter(
+        TeacherGrade.student_id == student_id,
+        TeacherGrade.module_id == module_id,
+        ~TeacherGrade.answer_id.in_(processed_answer_ids) if processed_answer_ids else True
+    ).all()
+
+    for teacher_grade in teacher_only_grades:
+        # Get the answer and question details
+        answer = db.query(StudentAnswer).filter(StudentAnswer.id == teacher_grade.answer_id).first()
+        if not answer:
+            continue
+
+        question = db.query(Question).filter(Question.id == answer.question_id).first()
+        if not question:
+            continue
+
+        # Create a feedback entry with only teacher grade (no AI feedback)
+        student_view = {
+            "id": None,  # No AI feedback ID
+            "answer_id": str(answer.id),
+            "question_id": str(answer.question_id),
+            "attempt": answer.attempt,
+            "is_correct": None,  # No AI feedback
+            "score": None,
+            "correctness_score": None,
+            "explanation": "",
+            "improvement_hint": None,
+            "concept_explanation": None,
+            "strengths": None,
+            "weaknesses": None,
+            "generated_at": None,
+            "points_earned": None,  # AI didn't score this
+            "points_possible": question.points,
+            "criterion_scores": None,
+            "has_course_materials": False,
+            "selected_option": None,
+            "correct_option": None,
+            "available_options": None,
+            "grading_details": None,
+            "selected_options": None,
+            "sub_results": None,
+            # Teacher grade (the main data here)
+            "teacher_grade": {
+                "points_awarded": teacher_grade.points_awarded,
+                "feedback_text": teacher_grade.feedback_text,
+                "graded_at": teacher_grade.graded_at.isoformat() if teacher_grade.graded_at else None
+            },
+            "is_teacher_graded": True
         }
 
         student_feedback.append(student_view)
@@ -554,19 +733,36 @@ def save_student_answer(
 
     # VALIDATION: Check if answer content is empty or whitespace-only
     answer_content = None
+    is_empty = False
+
     if isinstance(answer_data.answer, dict):
-        # Extract content from answer dict
-        answer_content = (
-            answer_data.answer.get("text_response") or
-            answer_data.answer.get("selected_option_id") or
-            answer_data.answer.get("selected_option") or
-            ""
-        )
+        # Check for different answer formats based on question type
+        if "blanks" in answer_data.answer:
+            # Fill-in-the-Blank: Check if any blanks have non-empty values
+            blanks = answer_data.answer.get("blanks", {})
+            is_empty = not blanks or not any(str(v).strip() for v in blanks.values())
+        elif "selected_options" in answer_data.answer:
+            # MCQ Multiple: Check if array is non-empty
+            selected_options = answer_data.answer.get("selected_options", [])
+            is_empty = not selected_options or len(selected_options) == 0
+        elif "sub_answers" in answer_data.answer:
+            # Multi-Part: Check if any sub-answers have non-empty values
+            sub_answers = answer_data.answer.get("sub_answers", {})
+            is_empty = not sub_answers or len(sub_answers) == 0
+        else:
+            # Traditional answer formats (MCQ, Short, Long)
+            answer_content = (
+                answer_data.answer.get("text_response") or
+                answer_data.answer.get("selected_option_id") or
+                answer_data.answer.get("selected_option") or
+                ""
+            )
+            is_empty = not answer_content or not str(answer_content).strip()
     elif isinstance(answer_data.answer, str):
         answer_content = answer_data.answer
-
-    # Check if content is empty or only whitespace
-    is_empty = not answer_content or not str(answer_content).strip()
+        is_empty = not answer_content or not str(answer_content).strip()
+    else:
+        is_empty = True
 
     # Check if answer already exists for this attempt
     existing_answer = get_student_answer(

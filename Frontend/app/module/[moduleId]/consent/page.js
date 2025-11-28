@@ -9,6 +9,10 @@ import Link from 'next/link';
 import { apiClient } from '@/lib/auth';
 import ConsentFormEditor from '@/components/ConsentFormEditor';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { AppSidebar } from '@/components/app-sidebar';
+import { SiteHeader } from '@/components/site-header';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { CardSkeleton, Skeleton } from '@/components/SkeletonLoader';
 
 export default function ModuleConsentPage() {
   const params = useParams();
@@ -24,6 +28,15 @@ export default function ModuleConsentPage() {
       setLoading(true);
       const data = await apiClient.get(`/api/modules/${moduleId}`);
       setModule(data);
+
+      // Add module name to URL for sidebar navigation
+      if (data?.name) {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.get('module')) {
+          url.searchParams.set('module', data.name);
+          window.history.replaceState({}, '', url);
+        }
+      }
     } catch (err) {
       console.error('Failed to load module:', err);
 
@@ -55,38 +68,69 @@ export default function ModuleConsentPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <LoadingSpinner size="large" text="Loading module..." />
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="min-h-screen bg-background">
+            <div className="max-w-5xl mx-auto px-6 py-12">
+              {/* Header Skeleton */}
+              <div className="mb-8">
+                <Skeleton className="h-10 w-32 mb-4" />
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-96" />
+                  <Skeleton className="h-5 w-64" />
+                </div>
+              </div>
+
+              {/* Content Skeleton */}
+              <div className="space-y-6">
+                <CardSkeleton />
+                <CardSkeleton />
+              </div>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   if (error || !module) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-red-600 mb-4">{error || 'Module not found'}</p>
-              <Button asChild>
-                <Link href="/mymodules">Back to Modules</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="min-h-screen bg-background flex items-center justify-center">
+            <Card className="max-w-md">
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <p className="text-red-600 mb-4">{error || 'Module not found'}</p>
+                  <Button asChild>
+                    <Link href={`/dashboard?module=${module?.name || ''}`}>Back to Dashboard</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-6 py-12">
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <SiteHeader />
+        <div className="min-h-screen bg-background">
+          <div className="max-w-5xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="mb-8">
           <Button variant="ghost" asChild className="mb-4">
-            <Link href="/mymodules">
+            <Link href={`/dashboard?module=${module.name}`}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Modules
+              Back to Dashboard
             </Link>
           </Button>
 
@@ -131,7 +175,9 @@ export default function ModuleConsentPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
-    </div>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

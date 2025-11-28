@@ -31,10 +31,10 @@ export default function AuthHeader() {
     <header className="flex justify-between items-center px-3 sm:px-4 py-3 gap-2 sm:gap-4 h-16 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2 font-bold text-lg sm:text-xl text-gray-900 dark:text-white">
-        <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-sm font-bold">AI</span>
+        <div className="w-8 h-8 bg-emerald-700 rounded-lg flex items-center justify-center flex-shrink-0">
+          <span className="text-white text-sm font-bold">AP</span>
         </div>
-        <span className="hidden sm:inline">AI Education Pilot</span>
+        <span className="hidden sm:inline">AI Pilot</span>
       </Link>
 
       <div className="flex items-center gap-2 sm:gap-4">

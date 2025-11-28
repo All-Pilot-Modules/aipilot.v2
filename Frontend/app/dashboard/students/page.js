@@ -2,30 +2,32 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Plus, Search, Users, AlertCircle, X, Calendar, Clock, Award, BookOpen, TrendingUp, User, Edit, Trash2, MoreHorizontal, UserPlus, Save, CheckCircle, XCircle, HelpCircle, List, ExternalLink, Filter, SortAsc, SortDesc, Download, FileText, FileJson, GraduationCap, Target, BarChart3, Activity, Zap } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, useMemo, memo } from "react";
 import { apiClient } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 
-function StudentsPageContent() {
+// Dynamically import AlertDialog components
+const AlertDialog = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialog })), { ssr: false });
+const AlertDialogAction = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogAction })), { ssr: false });
+const AlertDialogCancel = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogCancel })), { ssr: false });
+const AlertDialogContent = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogContent })), { ssr: false });
+const AlertDialogDescription = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogDescription })), { ssr: false });
+const AlertDialogFooter = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogFooter })), { ssr: false });
+const AlertDialogHeader = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogHeader })), { ssr: false });
+const AlertDialogTitle = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogTitle })), { ssr: false });
+
+const StudentsPageContent = memo(function StudentsPageContent() {
   console.log('🚀 [Students Page] Component rendering...');
 
   const { user, loading, isAuthenticated } = useAuth();
@@ -736,9 +738,13 @@ function StudentsPageContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">Total Students</p>
-                    <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">
-                      {loadingStudents ? '...' : students.length}
-                    </p>
+                    {loadingStudents ? (
+                      <Skeleton className="h-9 w-16 mb-1" />
+                    ) : (
+                      <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">
+                        {students.length}
+                      </p>
+                    )}
                     <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Enrolled in module</p>
                   </div>
                 </CardContent>
@@ -757,13 +763,17 @@ function StudentsPageContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Active Students</p>
-                    <p className="text-3xl font-bold text-green-900 dark:text-green-100">
-                      {loadingStudents ? '...' : students.filter(s => {
-                        const lastAccess = new Date(s.last_access);
-                        const daysSinceAccess = (Date.now() - lastAccess.getTime()) / (1000 * 60 * 60 * 24);
-                        return daysSinceAccess <= thresholds.activeDays;
-                      }).length}
-                    </p>
+                    {loadingStudents ? (
+                      <Skeleton className="h-9 w-16 mb-1" />
+                    ) : (
+                      <p className="text-3xl font-bold text-green-900 dark:text-green-100">
+                        {students.filter(s => {
+                          const lastAccess = new Date(s.last_access);
+                          const daysSinceAccess = (Date.now() - lastAccess.getTime()) / (1000 * 60 * 60 * 24);
+                          return daysSinceAccess <= thresholds.activeDays;
+                        }).length}
+                      </p>
+                    )}
                     <p className="text-xs text-green-600/70 dark:text-green-400/70 mt-1">Last {thresholds.activeDays} days</p>
                   </div>
                 </CardContent>
@@ -792,12 +802,16 @@ function StudentsPageContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-1">Avg Score</p>
-                    <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">
-                      {loadingStudents ? '...' : students.length > 0 ?
-                        Math.round(students.reduce((acc, s) => acc + s.avg_score, 0) / students.length) + '%' :
-                        '-'
-                      }
-                    </p>
+                    {loadingStudents ? (
+                      <Skeleton className="h-9 w-20 mb-1" />
+                    ) : (
+                      <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">
+                        {students.length > 0 ?
+                          Math.round(students.reduce((acc, s) => acc + s.avg_score, 0) / students.length) + '%' :
+                          '-'
+                        }
+                      </p>
+                    )}
                     <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mt-1">Overall performance</p>
                   </div>
                 </CardContent>
@@ -816,12 +830,16 @@ function StudentsPageContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-orange-700 dark:text-orange-300 mb-1">Completion Rate</p>
-                    <p className="text-3xl font-bold text-orange-900 dark:text-orange-100">
-                      {loadingStudents ? '...' : students.length > 0 ?
-                        Math.round(students.filter(s => s.progress === 100).length / students.length * 100) + '%' :
-                        '-'
-                      }
-                    </p>
+                    {loadingStudents ? (
+                      <Skeleton className="h-9 w-20 mb-1" />
+                    ) : (
+                      <p className="text-3xl font-bold text-orange-900 dark:text-orange-100">
+                        {students.length > 0 ?
+                          Math.round(students.filter(s => s.progress === 100).length / students.length * 100) + '%' :
+                          '-'
+                        }
+                      </p>
+                    )}
                     <p className="text-xs text-orange-600/70 dark:text-orange-400/70 mt-1">
                       {!loadingStudents && students.length > 0 && `${students.filter(s => s.progress === 100).length} completed`}
                     </p>
@@ -833,10 +851,27 @@ function StudentsPageContent() {
             {/* Students Table */}
             {loadingStudents ? (
               <Card className="border-border bg-card/50 backdrop-blur-sm">
-                <CardContent className="py-16 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                  <h3 className="text-lg font-semibold mb-2">Loading students...</h3>
-                  <p className="text-muted-foreground">Please wait while we fetch student data</p>
+                <CardHeader className="border-b pb-4">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-6 w-48" />
+                    <Skeleton className="h-10 w-32" />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="space-y-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-4 p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <Skeleton className="w-12 h-12 rounded-full flex-shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-5 w-32" />
+                          <Skeleton className="h-4 w-48" />
+                        </div>
+                        <Skeleton className="h-6 w-16 rounded" />
+                        <Skeleton className="h-6 w-20 rounded" />
+                        <Skeleton className="h-8 w-24" />
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             ) : students.length === 0 ? (
@@ -1149,7 +1184,7 @@ function StudentsPageContent() {
       </AlertDialog>
     </SidebarProvider>
   );
-}
+});
 
 export default function StudentsPage() {
   return (

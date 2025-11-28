@@ -8,22 +8,54 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Brain, Save, RotateCcw, AlertCircle, CheckCircle2, Sparkles, ArrowLeft } from "lucide-react";
 import { apiClient } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { CardSkeleton, Skeleton } from "@/components/SkeletonLoader";
 
 function ChatbotSettingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const moduleId = searchParams.get('module');
-  const moduleName = searchParams.get('moduleName');
+  const moduleName = searchParams.get('module'); // Get module name from query param
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [moduleId, setModuleId] = useState(null);
   const [moduleData, setModuleData] = useState(null);
   const [instructions, setInstructions] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [error, setError] = useState("");
 
+  // Fetch module by name to get moduleId
+  useEffect(() => {
+    const fetchModule = async () => {
+      if (!moduleName || !user) return;
+
+      try {
+        setLoading(true);
+        const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+        const modules = response?.data || response || [];
+        const module = modules.find(m => m.name === moduleName);
+        if (module) {
+          setModuleId(module.id);
+        } else {
+          setError("Module not found");
+        }
+      } catch (error) {
+        console.error('Failed to fetch module:', error);
+        setError("Failed to fetch module");
+      }
+    };
+
+    fetchModule();
+  }, [moduleName, user]);
+
   const loadChatbotSettings = useCallback(async () => {
+    if (!moduleId) return;
+
     try {
       setLoading(true);
       setError("");
@@ -78,28 +110,61 @@ function ChatbotSettingsContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading chatbot settings...</p>
-        </div>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+            <div className="max-w-5xl mx-auto px-6 py-8">
+              {/* Breadcrumb Skeleton */}
+              <div className="mb-6">
+                <Skeleton className="h-4 w-48 mb-3" />
+                <Skeleton className="h-10 w-32" />
+              </div>
+
+              {/* Header Skeleton */}
+              <div className="mb-8">
+                <div className="flex items-center gap-3 mb-2">
+                  <Skeleton className="w-12 h-12 rounded-xl" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-64" />
+                    <Skeleton className="h-5 w-80" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Content Skeleton */}
+              <div className="space-y-6">
+                <CardSkeleton />
+                <CardSkeleton />
+                <CardSkeleton />
+              </div>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   if (!moduleData) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card className="max-w-md">
-          <CardContent className="p-6 text-center">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Module Not Found</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Please select a module from the dashboard.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-screen">
+            <Card className="max-w-md">
+              <CardContent className="p-6 text-center">
+                <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Module Not Found</h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Please select a module from the dashboard.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
@@ -107,8 +172,12 @@ function ChatbotSettingsContent() {
   const maxChars = 5000;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <div className="max-w-5xl mx-auto px-6 py-8">
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <SiteHeader />
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+          <div className="max-w-5xl mx-auto px-6 py-8">
         {/* Breadcrumb Navigation */}
         <div className="mb-6">
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-3">
@@ -333,8 +402,10 @@ If a question is outside the course materials, politely redirect them to ask the
             </div>
           </CardContent>
         </Card>
-      </div>
-    </div>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

@@ -12,13 +12,17 @@ import Link from "next/link";
 import { apiClient } from "@/lib/auth";
 import SimpleRubricEditor from "@/components/rubric/SimpleRubricEditor";
 import { Spinner } from "@/components/ui/spinner";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { CardSkeleton, Skeleton } from "@/components/SkeletonLoader";
 
 function RubricSettingsContent() {
   const { user, loading, isAuthenticated } = useAuth();
   const searchParams = useSearchParams();
-  const moduleId = searchParams.get('moduleId');
-  const moduleName = searchParams.get('moduleName');
+  const moduleName = searchParams.get('module'); // Use 'module' param like other pages
 
+  const [moduleId, setModuleId] = useState(null);
   const [rubric, setRubric] = useState(null);
   const [originalRubric, setOriginalRubric] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -27,6 +31,14 @@ function RubricSettingsContent() {
   const [templates, setTemplates] = useState([]);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
 
+  // Fetch module by name to get moduleId
+  useEffect(() => {
+    if (moduleName && user) {
+      fetchModule();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleName, user]);
+
   useEffect(() => {
     if (moduleId) {
       fetchRubric();
@@ -34,6 +46,19 @@ function RubricSettingsContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moduleId]);
+
+  const fetchModule = async () => {
+    try {
+      const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+      const modules = response?.data || response || [];
+      const module = modules.find(m => m.name === moduleName);
+      if (module) {
+        setModuleId(module.id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch module:', error);
+    }
+  };
 
   useEffect(() => {
     if (rubric && originalRubric) {
@@ -68,15 +93,15 @@ function RubricSettingsContent() {
 
     setIsSaving(true);
     try {
-      // Only send the fields that the simple editor actually modifies
-      // This prevents issues with grading_criteria weight validation
+      // Save all rubric settings including grading criteria, scoring, and question types
       const rubricToSave = {
-        enabled: rubric.enabled,
+        enabled: true, // Always enabled
         feedback_style: rubric.feedback_style,
         custom_instructions: rubric.custom_instructions,
         rag_settings: rubric.rag_settings,
-        // Don't send grading_criteria - it should come from templates
-        // Don't send question_type_settings - it should come from templates
+        grading_criteria: rubric.grading_criteria,
+        question_type_settings: rubric.question_type_settings,
+        grading_thresholds: rubric.grading_thresholds,
       };
 
       await apiClient.put(`/api/modules/${moduleId}/rubric`, rubricToSave);
@@ -117,112 +142,182 @@ function RubricSettingsContent() {
 
   if (loading || loadingRubric) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <Spinner size="xl" className="text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading rubric settings...</p>
-        </div>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100 dark:from-slate-950 dark:via-blue-950/10 dark:to-slate-900">
+            <div className="p-8 max-w-[1600px] mx-auto">
+              {/* Header Skeleton */}
+              <div className="mb-10">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-6">
+                  <div className="space-y-4 flex-1">
+                    <div className="flex items-center gap-4">
+                      <Skeleton className="w-20 h-20 rounded-2xl" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-10 w-80" />
+                        <Skeleton className="h-6 w-40" />
+                      </div>
+                    </div>
+                    <Skeleton className="h-5 w-full max-w-3xl" />
+                  </div>
+                  <Skeleton className="h-12 w-40" />
+                </div>
+              </div>
+
+              {/* Content Skeleton */}
+              <div className="space-y-6">
+                <CardSkeleton />
+                <CardSkeleton />
+                <CardSkeleton />
+              </div>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl mb-4">Access Denied</h1>
-        <Button asChild>
-          <Link href="/sign-in">Sign In</Link>
-        </Button>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="p-8 text-center">
+            <h1 className="text-xl mb-4">Access Denied</h1>
+            <Button asChild>
+              <Link href="/sign-in">Sign In</Link>
+            </Button>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   if (!moduleId) {
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl mb-4">No Module Selected</h1>
-        <Button asChild>
-          <Link href="/mymodules">Go to My Modules</Link>
-        </Button>
-      </div>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="p-8 text-center">
+            <h1 className="text-xl mb-4">No Module Selected</h1>
+            <Button asChild>
+              <Link href="/mymodules">Go to My Modules</Link>
+            </Button>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Button variant="ghost" asChild className="mb-4">
-            <Link href={`/dashboard?module=${encodeURIComponent(moduleName)}`}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
-            </Link>
-          </Button>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <SiteHeader />
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100 dark:from-slate-950 dark:via-blue-950/10 dark:to-slate-900">
+          <div className="p-8 max-w-[1600px] mx-auto">
+            {/* Premium Header */}
+            <div className="mb-10">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-6">
+                <div className="space-y-4 flex-1">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl blur-xl opacity-25"></div>
+                      <div className="relative p-4 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-xl">
+                        <Save className="w-8 h-8 text-white" />
+                      </div>
+                    </div>
+                    <div>
+                      <h1 className="text-4xl font-black bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 dark:from-slate-100 dark:via-blue-100 dark:to-purple-100 bg-clip-text text-transparent">
+                        AI Grading Rubric
+                      </h1>
+                      {moduleName && (
+                        <Badge className="mt-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0 shadow-md">
+                          📚 Module: {moduleName}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-base max-w-3xl leading-relaxed">
+                    Configure AI feedback criteria and grading standards to provide personalized,
+                    consistent feedback to your students based on your course materials.
+                  </p>
+                </div>
 
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2">
-                Feedback Settings
-              </h1>
-              <p className="text-muted-foreground">
-                {moduleName && <span className="font-medium">{moduleName}</span>}
-                {moduleName && ' - '}
-                Customize how AI gives feedback to your students
-              </p>
-            </div>
-            <div className="flex gap-2">
+                <div className="flex gap-3 items-start lg:items-center">
+                  {hasChanges && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setRubric(originalRubric);
+                        setHasChanges(false);
+                      }}
+                      className="shadow-md hover:shadow-lg transition-all border-2 border-slate-300 dark:border-slate-600 hover:border-red-400 dark:hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Discard Changes
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving || !hasChanges}
+                    size="lg"
+                    className="shadow-xl hover:shadow-2xl transition-all bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 border-0 px-8 font-semibold"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Spinner size="sm" className="mr-2" />
+                        Saving Changes...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-5 h-5 mr-2" />
+                        Save Settings
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
               {hasChanges && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setRubric(originalRubric);
-                    setHasChanges(false);
-                  }}
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Cancel
-                </Button>
+                <div className="animate-in slide-in-from-top-4 duration-500">
+                  <div className="relative overflow-hidden p-5 bg-gradient-to-r from-amber-100 via-orange-50 to-amber-100 dark:from-amber-950/30 dark:via-orange-950/20 dark:to-amber-950/30 border-2 border-amber-400 dark:border-amber-600 rounded-2xl shadow-lg">
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-orange-500/10 animate-pulse"></div>
+                    <div className="relative flex items-center gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg">
+                          <RefreshCw className="w-6 h-6 text-white animate-spin" style={{ animationDuration: '3s' }} />
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-base font-bold text-amber-900 dark:text-amber-100">
+                          You have unsaved changes
+                        </p>
+                        <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                          Don't forget to save your settings before leaving this page
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
-              <Button
-                onClick={handleSave}
-                disabled={isSaving || !hasChanges}
-                size="lg"
-              >
-                {isSaving ? (
-                  <>
-                    <Spinner size="sm" className="mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Settings
-                  </>
-                )}
-              </Button>
             </div>
+
+            {/* Simplified Editor */}
+            <SimpleRubricEditor
+              value={rubric}
+              onChange={updateRubric}
+              templates={templates}
+              onApplyTemplate={handleApplyTemplate}
+              isApplyingTemplate={isApplyingTemplate}
+            />
           </div>
-
-          {hasChanges && (
-            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <p className="text-sm text-amber-900 dark:text-amber-100">
-                💡 You have unsaved changes
-              </p>
-            </div>
-          )}
         </div>
-
-        {/* Simplified Editor */}
-        <SimpleRubricEditor
-          value={rubric}
-          onChange={updateRubric}
-          templates={templates}
-          onApplyTemplate={handleApplyTemplate}
-          isApplyingTemplate={isApplyingTemplate}
-        />
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

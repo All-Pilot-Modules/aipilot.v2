@@ -10,12 +10,13 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, Save, User, Shield, Bell } from "lucide-react";
+import { Settings, Save } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
 import { apiClient } from "@/lib/auth";
 import AssignmentFeaturesSelector from "@/components/AssignmentFeaturesSelector";
 import { InlineLoader } from "@/components/LoadingSpinner";
+import { CardSkeleton, Skeleton } from "@/components/SkeletonLoader";
 
 function SettingsPageContent() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -111,8 +112,40 @@ function SettingsPageContent() {
     }
   };
 
-  if (loading) {
-    return <div className="p-8">Loading...</div>;
+  if (loading || isLoading) {
+    return (
+      <SidebarProvider
+        style={{
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)"
+        }}
+      >
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <div className="px-4 lg:px-6">
+                  {/* Header Skeleton */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="space-y-2">
+                      <Skeleton className="h-8 w-80" />
+                      <Skeleton className="h-5 w-96" />
+                    </div>
+                  </div>
+
+                  {/* Content Skeleton */}
+                  <div className="space-y-6">
+                    <CardSkeleton />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
   }
 
   if (!isAuthenticated) {
@@ -155,7 +188,7 @@ function SettingsPageContent() {
                   <div>
                     <h1 className="text-2xl font-bold">Settings - {moduleName}</h1>
                     <p className="text-muted-foreground">
-                      Manage your module and account settings
+                      Manage module configuration and assignment features
                     </p>
                   </div>
                 </div>
@@ -224,80 +257,6 @@ function SettingsPageContent() {
                       </div>
                     </CardContent>
                   </Card>
-
-                  {/* Other Settings Grid */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Account Settings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <User className="w-5 h-5" />
-                        Account Settings
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <Label htmlFor="username">Username</Label>
-                        <Input id="username" defaultValue={user?.username} />
-                      </div>
-                      <div>
-                        <Label htmlFor="email">Email</Label>
-                        <Input id="email" defaultValue={user?.email} type="email" />
-                      </div>
-                      <Button>
-                        <Save className="mr-2 w-4 h-4" />
-                        Update Account
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  {/* Notification Settings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Bell className="w-5 h-5" />
-                        Notifications
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="emailNotifs">Email Notifications</Label>
-                        <input type="checkbox" id="emailNotifs" className="h-4 w-4" />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="testAlerts">Test Completion Alerts</Label>
-                        <input type="checkbox" id="testAlerts" className="h-4 w-4" />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="weeklyReports">Weekly Reports</Label>
-                        <input type="checkbox" id="weeklyReports" className="h-4 w-4" />
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Security Settings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Shield className="w-5 h-5" />
-                        Security
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <Label htmlFor="currentPassword">Current Password</Label>
-                        <Input id="currentPassword" type="password" />
-                      </div>
-                      <div>
-                        <Label htmlFor="newPassword">New Password</Label>
-                        <Input id="newPassword" type="password" />
-                      </div>
-                      <Button variant="outline">
-                        Change Password
-                      </Button>
-                    </CardContent>
-                  </Card>
-                  </div>
                 </div>
               </div>
             </div>

@@ -31,19 +31,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 1.0,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": False
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.7,
                     "minimum_length": 50,
                     "check_grammar": False
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.7,
                     "require_structure": True,
                     "check_citations": False,
                     "minimum_paragraphs": 2
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 0.8,
+                    "partial_credit": True,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.9,
+                    "case_sensitive": False,
+                    "allow_partial_match": True
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.7,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 60,
+                "partial_credit": True
             }
         }
     },
@@ -75,19 +109,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "Focus on mathematical accuracy and proper methodology. Reference formulas and principles from course materials.",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 1.0,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": True
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.8,
                     "minimum_length": 30,
                     "check_grammar": False
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.8,
                     "require_structure": True,
                     "check_citations": True,
                     "minimum_paragraphs": 2
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 1.0,
+                    "partial_credit": True,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 1.0,
+                    "case_sensitive": False,
+                    "allow_partial_match": False
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.8,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 60,
+                "partial_credit": True
             }
         }
     },
@@ -119,19 +187,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "Encourage critical thinking and original analysis. Emphasize the importance of supporting arguments with evidence.",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.8,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": False
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.6,
                     "minimum_length": 100,
                     "check_grammar": True
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.6,
                     "require_structure": True,
                     "check_citations": True,
                     "minimum_paragraphs": 3
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 0.7,
+                    "partial_credit": True,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.8,
+                    "case_sensitive": False,
+                    "allow_partial_match": True
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.6,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 60,
+                "partial_credit": True
             }
         }
     },
@@ -163,19 +265,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "Provide constructive feedback on language use. Highlight both errors and successes. Suggest alternative phrasings when appropriate.",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.9,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": False
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.5,
                     "minimum_length": 20,
                     "check_grammar": True
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.5,
                     "require_structure": True,
                     "check_citations": False,
                     "minimum_paragraphs": 2
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 0.8,
+                    "partial_credit": True,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.7,
+                    "case_sensitive": False,
+                    "allow_partial_match": True
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.5,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 60,
+                "partial_credit": True
             }
         }
     },
@@ -207,19 +343,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "Focus on practical application and professional scenarios. Relate concepts to real-world business contexts.",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.8,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": False
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.7,
                     "minimum_length": 50,
                     "check_grammar": True
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.7,
                     "require_structure": True,
                     "check_citations": False,
                     "minimum_paragraphs": 2
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 0.8,
+                    "partial_credit": True,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 0.8,
+                    "case_sensitive": False,
+                    "allow_partial_match": True
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.7,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 60,
+                "partial_credit": True
             }
         }
     },
@@ -250,19 +420,53 @@ RUBRIC_TEMPLATES = {
             "custom_instructions": "Maintain high standards. Be specific about what's missing or incorrect. Reference exact course material requirements.",
             "question_type_settings": {
                 "mcq": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 1.0,
                     "explain_correct": True,
                     "explain_incorrect": True,
                     "show_all_options_analysis": True
                 },
-                "short_answer": {
+                "short": {
+                    "enabled": True,
+                    "default_points": 10,
+                    "strictness": 0.9,
                     "minimum_length": 50,
                     "check_grammar": True
                 },
-                "essay": {
+                "long": {
+                    "enabled": True,
+                    "default_points": 20,
+                    "strictness": 0.9,
                     "require_structure": True,
                     "check_citations": True,
                     "minimum_paragraphs": 3
+                },
+                "mcq_multiple": {
+                    "enabled": True,
+                    "default_points": 8,
+                    "strictness": 1.0,
+                    "partial_credit": False,
+                    "explain_correct": True,
+                    "explain_incorrect": True
+                },
+                "fill_blank": {
+                    "enabled": True,
+                    "default_points": 5,
+                    "strictness": 1.0,
+                    "case_sensitive": True,
+                    "allow_partial_match": False
+                },
+                "multi_part": {
+                    "enabled": True,
+                    "default_points": 15,
+                    "strictness": 0.9,
+                    "grade_independently": True
                 }
+            },
+            "grading_thresholds": {
+                "passing_score": 70,
+                "partial_credit": False
             }
         }
     }

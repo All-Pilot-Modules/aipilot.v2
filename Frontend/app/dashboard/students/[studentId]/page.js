@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -10,7 +11,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ArrowLeft, User, Calendar, Clock, Award, BookOpen, TrendingUp, CheckCircle, XCircle, HelpCircle, List, Download, BarChart3, PieChart, Bot, FileDown, FileText, FileJson, ClipboardList, MessageSquare, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, useMemo, memo } from "react";
 import { apiClient } from "@/lib/auth";
 
 function StudentDetailPageContent() {
@@ -30,6 +31,7 @@ function StudentDetailPageContent() {
   const [error, setError] = useState('');
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [aiFeedbackMap, setAiFeedbackMap] = useState({});
+  const [teacherGradesMap, setTeacherGradesMap] = useState({});
   const [answersByAttempt, setAnswersByAttempt] = useState({});
   const [selectedAttempt, setSelectedAttempt] = useState(1);
   const [surveyData, setSurveyData] = useState(null);
@@ -100,6 +102,7 @@ function StudentDetailPageContent() {
       // Fetch AI feedback for this student and module
       let feedbackData = [];
       let feedbackByAnswerId = {}; // Declare outside try block so it's accessible later
+      let teacherGradesByAnswerId = {};
       try {
         const feedbackResponse = await apiClient.get(`/api/student/modules/${module.id}/feedback?student_id=${studentId}`);
         feedbackData = feedbackResponse.data || feedbackResponse || [];
@@ -107,10 +110,17 @@ function StudentDetailPageContent() {
         // Create a map of feedback by answer_id for quick lookup
         feedbackData.forEach(feedback => {
           feedbackByAnswerId[feedback.answer_id] = feedback;
+
+          // Also extract teacher grades if they exist
+          if (feedback.teacher_grade) {
+            teacherGradesByAnswerId[feedback.answer_id] = feedback.teacher_grade;
+          }
         });
         setAiFeedbackMap(feedbackByAnswerId);
+        setTeacherGradesMap(teacherGradesByAnswerId);
 
         console.log(`Loaded ${feedbackData.length} AI feedback entries for student ${studentId}`);
+        console.log(`Loaded ${Object.keys(teacherGradesByAnswerId).length} teacher grades for student ${studentId}`);
       } catch (feedbackError) {
         console.error('Error fetching AI feedback:', feedbackError);
         // Continue without feedback - not critical
@@ -370,60 +380,107 @@ function StudentDetailPageContent() {
   // Function to render AI feedback display
   const renderAIFeedback = (answerId, isCorrect) => {
     const feedback = getAIFeedback(answerId);
+    const teacherGrade = teacherGradesMap[answerId];
 
-    if (!feedback) {
+    if (!feedback && !teacherGrade) {
       // No feedback available
       if (isCorrect === null) {
         return <span className="text-slate-600/70 dark:text-slate-400/70 italic">Not answered yet</span>;
       }
-      return <span className="text-slate-600/70 dark:text-slate-400/70 italic">No AI feedback available for this attempt</span>;
+      return <span className="text-slate-600/70 dark:text-slate-400/70 italic">No feedback available for this attempt</span>;
     }
 
-    // Display real AI feedback
+    // Display teacher grade and AI feedback
     return (
-      <div className="space-y-2">
-        {feedback.explanation && (
-          <div>
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Explanation:</span>
-            <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{feedback.explanation}</p>
+      <div className="space-y-3">
+        {/* Teacher Grade - Priority Display */}
+        {teacherGrade && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 p-3 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
+            <div className="flex items-start gap-2 mb-2">
+              <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+              <div className="flex-1">
+                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100 uppercase">Teacher's Grade</span>
+                <div className="mt-1">
+                  <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                    {teacherGrade.points_awarded} pts
+                  </span>
+                  {feedback?.points_possible && (
+                    <span className="text-sm text-emerald-700 dark:text-emerald-300 ml-1">
+                      / {feedback.points_possible}
+                    </span>
+                  )}
+                </div>
+                {teacherGrade.feedback_text && (
+                  <div className="mt-2 bg-white dark:bg-gray-900 p-2 rounded">
+                    <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                      {teacherGrade.feedback_text}
+                    </p>
+                  </div>
+                )}
+                {teacherGrade.graded_at && (
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                    Graded on {new Date(teacherGrade.graded_at).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {feedback.strengths && feedback.strengths.length > 0 && (
-          <div>
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase">Strengths:</span>
-            <ul className="text-sm text-slate-800 dark:text-slate-200 list-disc list-inside">
-              {feedback.strengths.map((strength, idx) => (
-                <li key={idx}>{strength}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* AI Feedback */}
+        {feedback && (
+          <div className={teacherGrade ? "border-t border-slate-200 dark:border-slate-600 pt-3" : ""}>
+            {teacherGrade && (
+              <div className="flex items-center gap-1 mb-2">
+                <Bot className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase">AI Feedback</span>
+              </div>
+            )}
 
-        {feedback.weaknesses && feedback.weaknesses.length > 0 && (
-          <div>
-            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase">Weaknesses:</span>
-            <ul className="text-sm text-slate-800 dark:text-slate-200 list-disc list-inside">
-              {feedback.weaknesses.map((weakness, idx) => (
-                <li key={idx}>{weakness}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+            {feedback.explanation && (
+              <div>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Explanation:</span>
+                <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{feedback.explanation}</p>
+              </div>
+            )}
 
-        {feedback.improvement_hint && (
-          <div>
-            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase">Suggestion:</span>
-            <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{feedback.improvement_hint}</p>
-          </div>
-        )}
+            {feedback.strengths && feedback.strengths.length > 0 && (
+              <div className="mt-2">
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase">Strengths:</span>
+                <ul className="text-sm text-slate-800 dark:text-slate-200 list-disc list-inside">
+                  {feedback.strengths.map((strength, idx) => (
+                    <li key={idx}>{strength}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-        {feedback.score !== null && feedback.score !== undefined && (
-          <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Score: </span>
-            <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              {Math.round(feedback.score > 1 ? feedback.score : feedback.score * 100)}%
-            </span>
+            {feedback.weaknesses && feedback.weaknesses.length > 0 && (
+              <div className="mt-2">
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase">Weaknesses:</span>
+                <ul className="text-sm text-slate-800 dark:text-slate-200 list-disc list-inside">
+                  {feedback.weaknesses.map((weakness, idx) => (
+                    <li key={idx}>{weakness}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {feedback.improvement_hint && (
+              <div className="mt-2">
+                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase">Suggestion:</span>
+                <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{feedback.improvement_hint}</p>
+              </div>
+            )}
+
+            {feedback.score !== null && feedback.score !== undefined && (
+              <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">AI Score: </span>
+                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  {Math.round(feedback.score > 1 ? feedback.score : feedback.score * 100)}%
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

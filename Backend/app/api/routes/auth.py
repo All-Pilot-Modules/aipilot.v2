@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
@@ -13,6 +13,14 @@ from app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     REFRESH_TOKEN_EXPIRE_DAYS
 )
+from app.core.email import (
+    send_verification_email,
+    send_welcome_email,
+    generate_verification_code,
+    generate_verification_token,
+    get_verification_code_expiry,
+    get_verification_token_expiry
+)
 from app.database import get_db
 from app.models.user import User
 
@@ -20,37 +28,55 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=UserOut)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+    """Register a new user and send verification email."""
     # Check if user already exists
     db_user = db.query(User).filter(
-        (User.id == user_data.id) | 
+        (User.id == user_data.id) |
         (User.email == user_data.email) |
         (User.username == user_data.username)
     ).first()
-    
+
     if db_user:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="User with this ID, email, or username already exists"
         )
-    
+
     # Hash the password
     hashed_password = get_password_hash(user_data.password)
-    
-    # Create user
+
+    # Generate verification code and token
+    verification_code = generate_verification_code()
+    verification_token = generate_verification_token()
+
+    # Create user with email verification fields
     db_user = User(
         id=user_data.id,
         username=user_data.username,
         email=user_data.email,
         hashed_password=hashed_password,
         profile_image=user_data.profile_image,
-        role=user_data.role or "student"  # Default role
+        role=user_data.role or "student",  # Default role
+        is_email_verified=False,
+        verification_code=verification_code,
+        verification_code_expires=get_verification_code_expiry(),
+        verification_token=verification_token,
+        verification_token_expires=get_verification_token_expiry()
     )
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+
+    # Send verification email
+    if user_data.email:
+        send_verification_email(
+            to_email=user_data.email,
+            username=user_data.username or user_data.id,
+            code=verification_code,
+            token=verification_token
+        )
+
     return db_user
 
 @router.post("/login", response_model=Token)
@@ -58,21 +84,28 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     """Authenticate user and return access token."""
     # Find user by ID or email
     user = db.query(User).filter(
-        (User.id == user_data.identifier) | 
+        (User.id == user_data.identifier) |
         (User.email == user_data.identifier)
     ).first()
-    
+
     if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
+        )
+
+    # Check email verification status
+    if not user.is_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please verify your email before logging in."
         )
     
     # Create access token and refresh token with user role and additional claims
@@ -103,7 +136,12 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "role": user.role
+            "role": user.role,
+            "profile_image": user.profile_image,
+            "is_email_verified": user.is_email_verified,
+            "is_active": user.is_active,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at
         }
     }
 
@@ -173,3 +211,145 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 def logout():
     """Logout user (client-side token removal)."""
     return {"message": "Successfully logged out"}
+
+
+@router.post("/verify-email/code")
+def verify_email_with_code(email: str, code: str, db: Session = Depends(get_db)):
+    """Verify user email using 6-digit code."""
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check if already verified
+    if user.is_email_verified:
+        return {"message": "Email already verified"}
+
+    # Check if code matches
+    if user.verification_code != code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code"
+        )
+
+    # Check if code has expired
+    if user.verification_code_expires and user.verification_code_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired. Please request a new one."
+        )
+
+    # Mark email as verified
+    user.is_email_verified = True
+    user.verification_code = None
+    user.verification_code_expires = None
+    user.verification_token = None
+    user.verification_token_expires = None
+
+    db.commit()
+
+    # Send welcome email
+    send_welcome_email(user.email, user.username or user.id)
+
+    return {
+        "message": "Email verified successfully",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "is_email_verified": user.is_email_verified
+        }
+    }
+
+
+@router.get("/verify-email/token")
+def verify_email_with_token(token: str, db: Session = Depends(get_db)):
+    """Verify user email using magic link token."""
+    # Find user by verification token
+    user = db.query(User).filter(User.verification_token == token).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid verification link"
+        )
+
+    # Check if already verified
+    if user.is_email_verified:
+        return {"message": "Email already verified", "redirect": "/login"}
+
+    # Check if token has expired
+    if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification link has expired. Please request a new one."
+        )
+
+    # Mark email as verified
+    user.is_email_verified = True
+    user.verification_code = None
+    user.verification_code_expires = None
+    user.verification_token = None
+    user.verification_token_expires = None
+
+    db.commit()
+
+    # Send welcome email
+    send_welcome_email(user.email, user.username or user.id)
+
+    return {
+        "message": "Email verified successfully",
+        "redirect": "/login",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "is_email_verified": user.is_email_verified
+        }
+    }
+
+
+@router.post("/verify-email/resend")
+def resend_verification_email(email: str, db: Session = Depends(get_db)):
+    """Resend verification email with new code and token."""
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check if already verified
+    if user.is_email_verified:
+        return {"message": "Email already verified"}
+
+    # Generate new verification code and token
+    verification_code = generate_verification_code()
+    verification_token = generate_verification_token()
+
+    # Update user with new verification data
+    user.verification_code = verification_code
+    user.verification_code_expires = get_verification_code_expiry()
+    user.verification_token = verification_token
+    user.verification_token_expires = get_verification_token_expiry()
+
+    db.commit()
+
+    # Send verification email
+    send_verification_email(
+        to_email=user.email,
+        username=user.username or user.id,
+        code=verification_code,
+        token=verification_token
+    )
+
+    return {
+        "message": "Verification email sent successfully",
+        "email": user.email
+    }

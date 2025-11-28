@@ -1,24 +1,15 @@
 'use client';
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-// RadioGroup not available - using custom implementation
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,9 +31,26 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/auth";
 import { FullPageLoader } from "@/components/LoadingSpinner";
-import PrefillControlPanel from "@/components/PrefillControlPanel";
+import { InlineError } from '@/components/ErrorAlert';
+import { QuestionSkeleton, PageLoadingSkeleton } from '@/components/SkeletonLoader';
+import { getErrorMessage } from '@/lib/errorMessages';
 
-export default function StudentTestPage() {
+// Dynamically import heavy components
+const AlertDialog = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialog })), { ssr: false });
+const AlertDialogAction = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogAction })), { ssr: false });
+const AlertDialogCancel = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogCancel })), { ssr: false });
+const AlertDialogContent = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogContent })), { ssr: false });
+const AlertDialogDescription = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogDescription })), { ssr: false });
+const AlertDialogFooter = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogFooter })), { ssr: false });
+const AlertDialogHeader = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogHeader })), { ssr: false });
+const AlertDialogTitle = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogTitle })), { ssr: false });
+
+const PrefillControlPanel = dynamic(() => import("@/components/PrefillControlPanel"), {
+  loading: () => null,
+  ssr: false
+});
+
+const StudentTestPage = memo(function StudentTestPage() {
   const params = useParams();
   const router = useRouter();
   const moduleId = params?.moduleId;
@@ -329,7 +337,9 @@ export default function StudentTestPage() {
     }
 
     // Don't auto-save empty answers
-    if (!answer || !answer.trim() || !moduleAccess) {
+    // For fill_blank/multi_part, answer is an object; for others it's a string
+    const isEmptyAnswer = !answer || (typeof answer === 'string' && !answer.trim());
+    if (isEmptyAnswer || !moduleAccess) {
       setSaveStatus(null);
 
       // RACE CONDITION FIX: Also tell backend to delete any existing answer for this question
@@ -363,7 +373,7 @@ export default function StudentTestPage() {
     const question = questions.find(q => q.id === questionId);
     if (!question) return;
 
-    // For MCQ, save immediately without feedback
+    // For MCQ (single answer), save immediately without feedback
     if (question.type === 'mcq') {
       // Immediate save for MCQ selections (no feedback until test submission)
       const saveAnswer = async () => {
@@ -372,7 +382,7 @@ export default function StudentTestPage() {
 
           // For immediate MCQ save, use the answer parameter directly
           // (ref won't be updated yet since useEffect runs after render)
-          if (!answer || !answer.trim()) {
+          if (!answer || (typeof answer === 'string' && !answer.trim())) {
             console.log(`⏭️ Skipping MCQ save - answer was cleared`);
             setSaveStatus(null);
             return;
@@ -384,7 +394,7 @@ export default function StudentTestPage() {
           };
           const currentAttempt = attempts[questionId] || 1;
 
-          console.log(`💾 Auto-saving MCQ answer for question ${questionId}: ${answer.trim()}`);
+          console.log(`💾 Auto-saving MCQ answer for question ${questionId}:`, answer);
 
           // Use new save-answer endpoint for draft saves (no feedback generation)
           await apiClient.post(`/api/student/save-answer`, {
@@ -425,8 +435,63 @@ export default function StudentTestPage() {
         }
       };
       saveAnswer();
+    } else if (question.type === 'mcq_multiple' || question.type === 'fill_blank' || question.type === 'multi_part') {
+      // For new question types (mcq_multiple, fill_blank, multi_part), save immediately
+      const saveAnswer = async () => {
+        try {
+          setSaveStatus('saving');
+
+          // Check if answer is empty
+          const isEmpty = !answer ||
+                         (Array.isArray(answer) && answer.length === 0) ||
+                         (typeof answer === 'object' && !Array.isArray(answer) && Object.keys(answer).length === 0);
+
+          if (isEmpty) {
+            console.log(`⏭️ Skipping ${question.type} save - answer was cleared`);
+            setSaveStatus(null);
+            return;
+          }
+
+          // Format answer based on question type
+          let formattedAnswer;
+          if (question.type === 'mcq_multiple') {
+            formattedAnswer = { selected_options: answer };
+          } else if (question.type === 'fill_blank') {
+            formattedAnswer = { blanks: answer };
+          } else if (question.type === 'multi_part') {
+            formattedAnswer = { sub_answers: answer };
+          }
+
+          const currentAttempt = attempts[questionId] || 1;
+
+          console.log(`💾 Auto-saving ${question.type} answer for question ${questionId}:`, answer);
+
+          // Use new save-answer endpoint for draft saves (no feedback generation)
+          await apiClient.post(`/api/student/save-answer`, {
+            student_id: moduleAccess.studentId,
+            question_id: questionId,
+            module_id: moduleId,
+            answer: formattedAnswer,
+            attempt_number: currentAttempt
+          });
+
+          setSaveStatus('saved');
+          setTimeout(() => {
+            setSaveStatus(null);
+          }, 2000);
+
+        } catch (err) {
+          const errorMessage = getErrorMessage(err);
+          console.log(`${question.type} Auto-save error for question ${questionId}:`, errorMessage);
+
+          setTimeout(() => {
+            setSaveStatus(null);
+          }, 3000);
+        }
+      };
+      saveAnswer();
     } else {
-      // For text answers, use debounced save without feedback
+      // For text answers (short/long), use debounced save without feedback
       const timeoutId = setTimeout(async () => {
         try {
           setSaveStatus('saving');
@@ -434,13 +499,13 @@ export default function StudentTestPage() {
           // RACE CONDITION FIX: Re-check the current answer value, not the old captured value
           // Use ref to get the LATEST answer value, not the captured closure value
           const currentAnswer = answersRef.current[questionId];
-          if (!currentAnswer || !currentAnswer.trim()) {
+          if (!currentAnswer || (typeof currentAnswer === 'string' && !currentAnswer.trim())) {
             console.log(`⏭️ Skipping text save for question ${questionId} - answer was cleared`);
             setSaveStatus(null);
             return;
           }
 
-          const formattedAnswer = { text_response: currentAnswer.trim() };
+          const formattedAnswer = { text_response: typeof currentAnswer === 'string' ? currentAnswer.trim() : currentAnswer };
           const currentAttempt = attempts[questionId] || 1;
 
           // Use new save-answer endpoint for draft saves (no feedback generation)
@@ -492,13 +557,31 @@ export default function StudentTestPage() {
       const currentQ = questions[currentQuestion];
       const currentAnswer = answers[currentQ.id];
 
-      if (!currentAnswer || !currentAnswer.trim()) return;
+      // Check if answer is empty (handle different types)
+      const isEmpty = !currentAnswer ||
+                     (typeof currentAnswer === 'string' && !currentAnswer.trim()) ||
+                     (Array.isArray(currentAnswer) && currentAnswer.length === 0) ||
+                     (typeof currentAnswer === 'object' && !Array.isArray(currentAnswer) && Object.keys(currentAnswer).length === 0);
+
+      if (isEmpty) return;
 
       // Format answer based on question type
       let formattedAnswer;
       if (currentQ.type === 'mcq') {
         formattedAnswer = {
           selected_option_id: currentAnswer.trim()
+        };
+      } else if (currentQ.type === 'mcq_multiple') {
+        formattedAnswer = {
+          selected_options: currentAnswer
+        };
+      } else if (currentQ.type === 'fill_blank') {
+        formattedAnswer = {
+          blanks: currentAnswer
+        };
+      } else if (currentQ.type === 'multi_part') {
+        formattedAnswer = {
+          sub_answers: currentAnswer
         };
       } else {
         formattedAnswer = {
@@ -529,7 +612,11 @@ export default function StudentTestPage() {
   const checkUnansweredQuestions = () => {
     const unanswered = questions.filter(q => {
       const answer = answers[q.id];
-      return !answer || !answer.trim();
+      // For fill_blank/multi_part/mcq_multiple, answer is an object; for others it's a string
+      const isEmpty = !answer || (typeof answer === 'string' && !answer.trim()) ||
+                      (typeof answer === 'object' && Object.keys(answer).length === 0) ||
+                      (Array.isArray(answer) && answer.length === 0);
+      return isEmpty;
     });
 
     if (unanswered.length > 0) {
@@ -572,16 +659,28 @@ export default function StudentTestPage() {
       for (const question of questions) {
         const currentAnswer = answersRef.current[question.id];
 
-        if (currentAnswer && currentAnswer.trim()) {
+        if (currentAnswer) {
           // Format answer based on question type
           let formattedAnswer;
           if (question.type === 'mcq') {
             formattedAnswer = {
-              selected_option_id: currentAnswer.trim()
+              selected_option_id: typeof currentAnswer === 'string' ? currentAnswer.trim() : currentAnswer
+            };
+          } else if (question.type === 'mcq_multiple') {
+            formattedAnswer = {
+              selected_options: Array.isArray(currentAnswer) ? currentAnswer : []
+            };
+          } else if (question.type === 'fill_blank') {
+            formattedAnswer = {
+              blanks: currentAnswer
+            };
+          } else if (question.type === 'multi_part') {
+            formattedAnswer = {
+              sub_answers: currentAnswer
             };
           } else {
             formattedAnswer = {
-              text_response: currentAnswer.trim()
+              text_response: typeof currentAnswer === 'string' ? currentAnswer.trim() : currentAnswer
             };
           }
 
@@ -686,9 +785,15 @@ export default function StudentTestPage() {
         let formattedAnswer;
 
         if (question.type === 'mcq') {
-          formattedAnswer = { selected_option_id: answerData.value.trim() };
+          formattedAnswer = { selected_option_id: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
+        } else if (question.type === 'mcq_multiple') {
+          formattedAnswer = { selected_options: Array.isArray(answerData.value) ? answerData.value : [] };
+        } else if (question.type === 'fill_blank') {
+          formattedAnswer = { blanks: answerData.value };
+        } else if (question.type === 'multi_part') {
+          formattedAnswer = { sub_answers: answerData.value };
         } else {
-          formattedAnswer = { text_response: answerData.value.trim() };
+          formattedAnswer = { text_response: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
         }
 
         await apiClient.post(`/api/student/save-answer`, {
@@ -736,9 +841,15 @@ export default function StudentTestPage() {
       let formattedAnswer;
 
       if (question.type === 'mcq') {
-        formattedAnswer = { selected_option_id: answerData.value.trim() };
+        formattedAnswer = { selected_option_id: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
+      } else if (question.type === 'mcq_multiple') {
+        formattedAnswer = { selected_options: Array.isArray(answerData.value) ? answerData.value : [] };
+      } else if (question.type === 'fill_blank') {
+        formattedAnswer = { blanks: answerData.value };
+      } else if (question.type === 'multi_part') {
+        formattedAnswer = { sub_answers: answerData.value };
       } else {
-        formattedAnswer = { text_response: answerData.value.trim() };
+        formattedAnswer = { text_response: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
       }
 
       await apiClient.post(`/api/student/save-answer`, {
@@ -798,9 +909,15 @@ export default function StudentTestPage() {
         let formattedAnswer;
 
         if (question.type === 'mcq') {
-          formattedAnswer = { selected_option_id: answerData.value.trim() };
+          formattedAnswer = { selected_option_id: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
+        } else if (question.type === 'mcq_multiple') {
+          formattedAnswer = { selected_options: answerData.value };
+        } else if (question.type === 'fill_blank') {
+          formattedAnswer = { blanks: answerData.value };
+        } else if (question.type === 'multi_part') {
+          formattedAnswer = { sub_answers: answerData.value };
         } else {
-          formattedAnswer = { text_response: answerData.value.trim() };
+          formattedAnswer = { text_response: typeof answerData.value === 'string' ? answerData.value.trim() : answerData.value };
         }
 
         await apiClient.post(`/api/student/save-answer`, {
@@ -857,7 +974,17 @@ export default function StudentTestPage() {
   };
 
   const getAnsweredCount = () => {
-    return Object.keys(answers).filter(qId => answers[qId] && answers[qId].trim()).length;
+    return Object.keys(answers).filter(qId => {
+      const answer = answers[qId];
+      if (!answer) return false;
+      // String answers (mcq, short, long)
+      if (typeof answer === 'string') return answer.trim().length > 0;
+      // Object answers (fill_blank, multi_part)
+      if (typeof answer === 'object' && !Array.isArray(answer)) return Object.keys(answer).length > 0;
+      // Array answers (mcq_multiple)
+      if (Array.isArray(answer)) return answer.length > 0;
+      return false;
+    }).length;
   };
 
   // Mask student ID to show only last 2 digits
@@ -871,7 +998,99 @@ export default function StudentTestPage() {
   };
 
   if (loading) {
-    return <FullPageLoader text="Loading test questions..." />;
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Header Skeleton */}
+        <div className="bg-white dark:bg-gray-800 border-b shadow-sm">
+          <div className="max-w-5xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-10 w-24" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="w-5 h-5 rounded" />
+                  <Skeleton className="h-6 w-48" />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-6 w-28 rounded-full" />
+                <Skeleton className="h-8 w-32 rounded" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="max-w-5xl mx-auto px-4 py-4">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            {/* Question Navigation Sidebar Skeleton */}
+            <div className="lg:col-span-1">
+              <Card className="sticky top-6">
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-5 w-24" />
+                </CardHeader>
+                <CardContent className="p-3">
+                  <div className="grid grid-cols-5 lg:grid-cols-3 gap-2">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-10 rounded-lg" />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Question Card Skeleton */}
+            <div className="lg:col-span-4 space-y-4">
+              <Card className="border-2 border-slate-200 dark:border-slate-700">
+                <CardHeader className="bg-gradient-to-r from-slate-50 to-blue-50/30 dark:from-slate-900/50 dark:to-blue-900/20 border-b-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <Skeleton className="h-6 w-32" />
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                      <Skeleton className="h-6 w-24 rounded-full" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-8 w-full mb-2" />
+                  <Skeleton className="h-6 w-3/4" />
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  {/* Question Options Skeleton */}
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg">
+                        <Skeleton className="h-5 w-full" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Navigation Buttons Skeleton */}
+                  <div className="flex items-center justify-between pt-6 border-t-2 border-slate-200 dark:border-slate-700">
+                    <Skeleton className="h-10 w-32" />
+                    <Skeleton className="h-10 w-32" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Submit Section Skeleton */}
+              <Card className="border-2 border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50 to-emerald-50/30 dark:from-green-950/20 dark:to-emerald-950/10">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-6 w-48" />
+                      <Skeleton className="h-4 w-64" />
+                    </div>
+                    <Skeleton className="h-12 w-40 rounded-lg" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (questions.length === 0) {
@@ -943,22 +1162,27 @@ export default function StudentTestPage() {
                 </Button>
               )}
               {saveStatus && (
-                <div className="flex items-center gap-1 text-sm">
+                <div
+                  className="flex items-center gap-1 text-sm"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
                   {saveStatus === 'saving' && (
                     <>
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600" aria-hidden="true"></div>
                       <span className="text-blue-600">Saving...</span>
                     </>
                   )}
                   {saveStatus === 'saved' && (
                     <>
-                      <CheckCircle className="w-3 h-3 text-green-600" />
+                      <CheckCircle className="w-3 h-3 text-green-600" aria-hidden="true" />
                       <span className="text-green-600">Saved</span>
                     </>
                   )}
                   {saveStatus === 'error' && (
                     <>
-                      <XCircle className="w-3 h-3 text-red-600" />
+                      <XCircle className="w-3 h-3 text-red-600" aria-hidden="true" />
                       <span className="text-red-600">Save failed</span>
                     </>
                   )}
@@ -975,7 +1199,7 @@ export default function StudentTestPage() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-4">
+      <main id="main-content" className="max-w-5xl mx-auto px-4 py-4">
         {/* Prefill Control Panel */}
         {showPrefillPanel && previousAttempts.length > 0 && (
           <div className="mb-4">
@@ -1003,7 +1227,12 @@ export default function StudentTestPage() {
               <CardContent className="p-3">
                 <div className="grid grid-cols-5 lg:grid-cols-3 gap-2">
                   {questions.map((q, index) => {
-                    const hasAnswer = answers[q.id] && answers[q.id].trim();
+                    const answer = answers[q.id];
+                    const hasAnswer = answer && (
+                      (typeof answer === 'string' && answer.trim().length > 0) ||
+                      (Array.isArray(answer) && answer.length > 0) ||
+                      (typeof answer === 'object' && !Array.isArray(answer) && Object.keys(answer).length > 0)
+                    );
                     const isActive = index === currentQuestion;
                     const isPrefilled = prefilledQuestions.has(q.id);
 
@@ -1011,6 +1240,8 @@ export default function StudentTestPage() {
                       <button
                         key={q.id}
                         onClick={() => setCurrentQuestion(index)}
+                        aria-label={`Question ${index + 1}${hasAnswer ? ' - Answered' : ' - Not answered'}${isActive ? ' - Current' : ''}`}
+                        aria-current={isActive ? 'step' : undefined}
                         className={`
                           w-12 h-12 rounded-lg text-sm font-bold border-2 transition-colors relative flex items-center justify-center
                           ${isActive
@@ -1052,8 +1283,12 @@ export default function StudentTestPage() {
                     </CardTitle>
                     <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                       <Badge variant="outline">
-                        {currentQ?.type === 'mcq' ? 'Multiple Choice' : 
-                         currentQ?.type === 'short' ? 'Short Answer' : 'Essay Question'}
+                        {currentQ?.type === 'mcq' ? 'Multiple Choice' :
+                         currentQ?.type === 'mcq_multiple' ? 'Multiple Choice (Multiple Answers)' :
+                         currentQ?.type === 'fill_blank' ? 'Fill in the Blanks' :
+                         currentQ?.type === 'multi_part' ? 'Multi-Part Question' :
+                         currentQ?.type === 'short' ? 'Short Answer' :
+                         currentQ?.type === 'long' ? 'Long Answer' : 'Question'}
                       </Badge>
                       {currentQ?.slide_number && (
                         <span>Slide {currentQ.slide_number}</span>
@@ -1070,10 +1305,12 @@ export default function StudentTestPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {/* Question Text */}
-                  <div className="prose dark:prose-invert max-w-none">
-                    <p className="text-lg leading-relaxed whitespace-pre-wrap">{currentQ?.text}</p>
-                  </div>
+                  {/* Question Text - Only show for non-fill_blank types */}
+                  {currentQ?.type !== 'fill_blank' && (
+                    <div className="prose dark:prose-invert max-w-none" id={`question-text-${currentQ.id}`}>
+                      <p className="text-lg leading-relaxed whitespace-pre-wrap">{currentQ?.text}</p>
+                    </div>
+                  )}
 
                   {/* Learning Outcome */}
                   {currentQ?.learning_outcome && (
@@ -1093,7 +1330,7 @@ export default function StudentTestPage() {
                     <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                       <img
                         src={currentQ.image_url}
-                        alt="Question illustration"
+                        alt={`Visual content for Question ${currentQuestion + 1}: ${currentQ.question_text?.substring(0, 100)}${currentQ.question_text?.length > 100 ? '...' : ''}`}
                         className="w-full max-w-2xl mx-auto rounded-lg shadow-sm object-contain"
                         style={{ maxHeight: '400px' }}
                       />
@@ -1128,7 +1365,8 @@ export default function StudentTestPage() {
                     </div>
 
                     {currentQ?.type === 'mcq' ? (
-                      <div className="space-y-2">
+                      <fieldset className="space-y-2">
+                        <legend className="sr-only">Choose one answer</legend>
                         {currentQ.options && Object.entries(currentQ.options).map(([key, option]) => {
                           const isSelected = answers[currentQ.id] === key;
                           return (
@@ -1148,6 +1386,7 @@ export default function StudentTestPage() {
                                 value={key}
                                 checked={isSelected}
                                 onChange={() => {}}
+                                aria-label={`Option ${key}: ${option}`}
                                 className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 cursor-pointer"
                               />
                               <Label
@@ -1160,22 +1399,211 @@ export default function StudentTestPage() {
                             </div>
                           );
                         })}
+                      </fieldset>
+                    ) : currentQ?.type === 'mcq_multiple' ? (
+                      <div>
+                        <div className="p-3 mb-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg" role="note">
+                          <p className="text-sm text-green-800 dark:text-green-200 font-medium">
+                            ℹ️ Select all correct answers (multiple selections allowed)
+                          </p>
+                        </div>
+                        <fieldset className="space-y-2">
+                          <legend className="sr-only">Select all correct answers (multiple selections allowed)</legend>
+                          {currentQ.options && Object.entries(currentQ.options).map(([key, option]) => {
+                            const currentSelections = answers[currentQ.id] || [];
+                            const isSelected = currentSelections.includes(key);
+                            return (
+                              <div
+                                key={key}
+                                className={`flex items-center space-x-3 p-3 rounded-md border cursor-pointer transition-all duration-200 ${
+                                  isSelected
+                                    ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
+                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                                }`}
+                                onClick={() => {
+                                  const newSelections = isSelected
+                                    ? currentSelections.filter(s => s !== key)
+                                    : [...currentSelections, key];
+                                  updateAnswer(currentQ.id, newSelections);
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`option-${currentQ.id}-${key}`}
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  aria-label={`Option ${key}: ${option}`}
+                                  className="h-5 w-5 text-green-600 focus:ring-green-500 border-gray-300 cursor-pointer"
+                                />
+                                <Label
+                                  htmlFor={`option-${currentQ.id}-${key}`}
+                                  className="flex-1 cursor-pointer text-base leading-relaxed"
+                                >
+                                  <span className="font-semibold mr-3 text-green-600">{key}.</span>
+                                  <span className={`whitespace-pre-wrap ${isSelected ? 'text-green-900 dark:text-green-100' : ''}`}>{option}</span>
+                                </Label>
+                              </div>
+                            );
+                          })}
+                        </fieldset>
+                      </div>
+                    ) : currentQ?.type === 'fill_blank' ? (
+                      <div className="space-y-6">
+                        {/* Question with Interactive Blanks */}
+                        <div className="p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                          <div className="text-lg leading-relaxed">
+                            {(() => {
+                              const text = currentQ.text || '';
+                              const blanks = currentQ.extended_config?.blanks || [];
+                              const currentBlanks = answers[currentQ.id] || {};
+                              const parts = text.split('_____');
+
+                              return parts.map((part, index) => (
+                                <span key={index}>
+                                  {part}
+                                  {index < parts.length - 1 && (
+                                    <span className="inline-flex items-center mx-1 px-3 py-1 bg-blue-100 dark:bg-blue-900/40 border border-blue-300 dark:border-blue-700 rounded font-medium text-blue-900 dark:text-blue-100">
+                                      {currentBlanks[blanks[index]?.position] || `___${index + 1}___`}
+                                    </span>
+                                  )}
+                                </span>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* Answer Inputs */}
+                        <div className="space-y-3">
+                          {(() => {
+                            const blanks = currentQ.extended_config?.blanks || [];
+                            const currentBlanks = answers[currentQ.id] || {};
+                            return blanks.map((blank, index) => {
+                              const isFilled = currentBlanks[blank.position] && currentBlanks[blank.position].trim();
+                              return (
+                                <div key={index} className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                                    {index + 1}
+                                  </div>
+                                  <Input
+                                    value={currentBlanks[blank.position] || ''}
+                                    onChange={(e) => {
+                                      const newBlanks = {...currentBlanks, [blank.position]: e.target.value};
+                                      updateAnswer(currentQ.id, newBlanks);
+                                    }}
+                                    placeholder={`Answer for blank ${index + 1}`}
+                                    className="flex-1 h-11"
+                                  />
+                                  {isFilled && (
+                                    <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    ) : currentQ?.type === 'multi_part' ? (
+                      <div>
+                        <div className="p-3 mb-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                          <p className="text-sm text-purple-800 dark:text-purple-200 font-medium">
+                            Answer all sub-questions below
+                          </p>
+                        </div>
+                        <div className="space-y-4">
+                          {(() => {
+                            const subQuestions = currentQ.extended_config?.sub_questions || [];
+                            const currentSubAnswers = answers[currentQ.id] || {};
+                            return subQuestions.map((subQ, index) => (
+                              <div key={index} className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                                <div className="mb-3">
+                                  <span className="inline-block px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded font-medium text-sm">
+                                    {subQ.id}
+                                  </span>
+                                  <p className="mt-2 text-base">{subQ.text}</p>
+                                </div>
+                                {subQ.type === 'mcq' ? (
+                                  <div className="space-y-2">
+                                    {subQ.options && Object.entries(subQ.options).map(([key, option]) => {
+                                      const isSelected = currentSubAnswers[subQ.id] === key;
+                                      return (
+                                        <div
+                                          key={key}
+                                          className={`flex items-center space-x-3 p-2 rounded-md border cursor-pointer ${
+                                            isSelected
+                                              ? 'border-purple-500 bg-purple-50 dark:bg-purple-950/20'
+                                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                          }`}
+                                          onClick={() => {
+                                            const newSubAnswers = {...currentSubAnswers, [subQ.id]: key};
+                                            updateAnswer(currentQ.id, newSubAnswers);
+                                          }}
+                                        >
+                                          <input
+                                            type="radio"
+                                            checked={isSelected}
+                                            onChange={() => {}}
+                                            className="h-4 w-4 text-purple-600"
+                                          />
+                                          <Label className="flex-1 cursor-pointer text-sm">
+                                            <span className="font-semibold mr-2">{key}.</span>
+                                            {option}
+                                          </Label>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : subQ.type === 'short' ? (
+                                  <Input
+                                    value={currentSubAnswers[subQ.id] || ''}
+                                    onChange={(e) => {
+                                      const newSubAnswers = {...currentSubAnswers, [subQ.id]: e.target.value};
+                                      updateAnswer(currentQ.id, newSubAnswers);
+                                    }}
+                                    placeholder="Your answer..."
+                                    className="text-sm"
+                                  />
+                                ) : (
+                                  <Textarea
+                                    value={currentSubAnswers[subQ.id] || ''}
+                                    onChange={(e) => {
+                                      const newSubAnswers = {...currentSubAnswers, [subQ.id]: e.target.value};
+                                      updateAnswer(currentQ.id, newSubAnswers);
+                                    }}
+                                    placeholder="Write your detailed answer..."
+                                    rows={4}
+                                    className="text-sm"
+                                  />
+                                )}
+                              </div>
+                            ));
+                          })()}
+                        </div>
                       </div>
                     ) : currentQ?.type === 'short' ? (
-                      <Input
-                        value={answers[currentQ.id] || ''}
-                        onChange={(e) => updateAnswer(currentQ.id, e.target.value)}
-                        placeholder="Enter your short answer..."
-                        className="text-base"
-                      />
+                      <div>
+                        <Label htmlFor={`answer-${currentQ.id}`} className="sr-only">Your short answer</Label>
+                        <Input
+                          id={`answer-${currentQ.id}`}
+                          value={answers[currentQ.id] || ''}
+                          onChange={(e) => updateAnswer(currentQ.id, e.target.value)}
+                          placeholder="Enter your short answer..."
+                          className="text-base"
+                          aria-describedby={`question-text-${currentQ.id}`}
+                        />
+                      </div>
                     ) : (
-                      <Textarea
-                        value={answers[currentQ.id] || ''}
-                        onChange={(e) => updateAnswer(currentQ.id, e.target.value)}
-                        placeholder="Write your detailed response here..."
-                        rows={8}
-                        className="text-base"
-                      />
+                      <div>
+                        <Label htmlFor={`answer-${currentQ.id}`} className="sr-only">Your detailed answer</Label>
+                        <Textarea
+                          id={`answer-${currentQ.id}`}
+                          value={answers[currentQ.id] || ''}
+                          onChange={(e) => updateAnswer(currentQ.id, e.target.value)}
+                          placeholder="Write your detailed response here..."
+                          rows={8}
+                          className="text-base"
+                          aria-describedby={`question-text-${currentQ.id}`}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1183,51 +1611,80 @@ export default function StudentTestPage() {
             </Card>
 
             {/* Navigation and Actions */}
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-                  disabled={currentQuestion === 0}
-                >
-                  <ArrowLeft className="w-4 h-4 mr-1" />
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentQuestion(Math.min(questions.length - 1, currentQuestion + 1))}
-                  disabled={currentQuestion === questions.length - 1}
-                >
-                  Next
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </Button>
+            <div className="mt-4 space-y-4">
+              {/* Navigation Buttons - Previous and Next on the left */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+                    disabled={currentQuestion === 0}
+                    size="lg"
+                    className="min-w-[120px]"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentQuestion(Math.min(questions.length - 1, currentQuestion + 1))}
+                    disabled={currentQuestion === questions.length - 1}
+                    size="lg"
+                    className="min-w-[120px]"
+                  >
+                    Next
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  Question {currentQuestion + 1} of {questions.length}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleSubmitTest}
-                  disabled={submitting || getAnsweredCount() === 0}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {submitting ? (
-                    "Submitting..."
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Submit Attempt {attempts[questions[0]?.id] || 1}
-                    </>
-                  )}
-                </Button>
-              </div>
+              {/* Submit Button - Only shown on last question */}
+              {currentQuestion === questions.length - 1 && (
+                <div className="border-t pt-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Ready to submit? You've answered {getAnsweredCount()} of {questions.length} questions
+                    </div>
+                    <Button
+                      onClick={handleSubmitTest}
+                      disabled={submitting || getAnsweredCount() === 0}
+                      size="lg"
+                      className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold shadow-lg w-full sm:w-auto"
+                    >
+                      {submitting ? (
+                        <span className="flex items-center">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Submitting...
+                        </span>
+                      ) : (
+                        <>
+                          <Send className="w-5 h-5 mr-2" />
+                          Submit Attempt {attempts[questions[0]?.id] || 1}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Progress indicator when not on last question */}
+              {currentQuestion < questions.length - 1 && (
+                <div className="border-t pt-4">
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Continue to the next question. You can submit when you reach the last question.
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Alerts */}
             {error && (
-              <div className="mt-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
-                  <AlertCircle className="h-4 w-4" />
-                  <span className="text-sm">{error}</span>
-                </div>
+              <div className="mt-4 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <InlineError message={getErrorMessage(error)} />
               </div>
             )}
 
@@ -1241,7 +1698,7 @@ export default function StudentTestPage() {
             )}
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Unanswered Questions Confirmation Dialog */}
       <AlertDialog open={showUnansweredDialog} onOpenChange={setShowUnansweredDialog}>
@@ -1297,4 +1754,6 @@ export default function StudentTestPage() {
       </AlertDialog>
     </div>
   );
-}
+});
+
+export default StudentTestPage;

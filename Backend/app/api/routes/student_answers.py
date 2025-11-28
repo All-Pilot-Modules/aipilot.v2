@@ -379,6 +379,286 @@ def generate_batch_feedback(
         )
 
 
+# ==================== TEACHER GRADING ENDPOINTS ====================
 
-    
-    
+@router.get("/module/{module_id}/final-submissions")
+def get_final_submissions_for_grading(
+    module_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all LAST attempt submissions for a module that need teacher grading.
+    Returns the most recent attempt for each student per question, regardless of max_attempts setting.
+    """
+    from app.models.student_answer import StudentAnswer
+    from app.models.question import Question
+    from app.models.ai_feedback import AIFeedback
+    from app.models.teacher_grade import TeacherGrade
+    from app.models.module import Module
+
+    # Get module
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    # Get max_attempts from module config
+    max_attempts = 2  # default
+    if module.assignment_config:
+        max_attempts = module.assignment_config.get('features', {}).get('multiple_attempts', {}).get('max_attempts', 2)
+
+    # Get all answers for this module
+    all_answers = db.query(StudentAnswer).filter(
+        StudentAnswer.module_id == module_id
+    ).all()
+
+    # Group by (student_id, question_id) and keep only the highest attempt
+    answer_map = {}
+    for answer in all_answers:
+        key = (answer.student_id, str(answer.question_id))
+        if key not in answer_map or answer.attempt > answer_map[key].attempt:
+            answer_map[key] = answer
+
+    # Group answers by student to check completeness and max attempts
+    student_answers = {}
+    for key, answer in answer_map.items():
+        student_id, question_id = key
+        if student_id not in student_answers:
+            student_answers[student_id] = []
+        student_answers[student_id].append(answer)
+
+    # Filter to only include students who have:
+    # Used all their allowed attempts (attempt number == max_attempts)
+    # Note: Students don't need to answer ALL questions - just need to have completed their last attempt
+    complete_students = []
+    for student_id, answers in student_answers.items():
+        # Check if all answers are at the max attempt level
+        # (student has exhausted all their attempts)
+        all_at_max_attempt = all(ans.attempt == max_attempts for ans in answers)
+
+        if all_at_max_attempt:
+            complete_students.extend(answers)
+
+    # Get the final answers (only from students who completed their last attempt)
+    final_answers = complete_students
+
+    results = []
+    for answer in final_answers:
+        # Get question details
+        question = db.query(Question).filter(Question.id == answer.question_id).first()
+        if not question:
+            continue
+
+        # Get AI feedback (if exists from previous attempts)
+        ai_feedback = db.query(AIFeedback).filter(
+            AIFeedback.answer_id == answer.id
+        ).first()
+
+        # Check if teacher has already graded this
+        teacher_grade = db.query(TeacherGrade).filter(
+            TeacherGrade.answer_id == answer.id
+        ).first()
+
+        results.append({
+            "answer_id": str(answer.id),
+            "student_id": answer.student_id,
+            "question_id": str(question.id),
+            "question_text": question.text,
+            "question_type": question.type,
+            "question_points": question.points,
+            "question_options": question.options,  # Include options for MCQ display
+            "question_extended_config": question.extended_config,  # For multi-part and other complex types
+            "correct_answer": question.correct_option_id or question.correct_answer,  # For MCQ - correct option ID
+            "student_answer": answer.answer,
+            "attempt": answer.attempt,  # Include the attempt number
+            "submitted_at": answer.submitted_at.isoformat() if answer.submitted_at else None,
+            "ai_suggested_score": ai_feedback.points_earned if ai_feedback else None,
+            "ai_feedback": ai_feedback.feedback_data if ai_feedback else None,
+            "teacher_grade": {
+                "points_awarded": teacher_grade.points_awarded,
+                "feedback_text": teacher_grade.feedback_text,
+                "graded_by": teacher_grade.graded_by,
+                "graded_at": teacher_grade.graded_at.isoformat()
+            } if teacher_grade else None,
+            "is_graded": teacher_grade is not None
+        })
+
+    return {
+        "module_id": str(module_id),
+        "total_submissions": len(results),
+        "graded_count": sum(1 for r in results if r["is_graded"]),
+        "ungraded_count": sum(1 for r in results if not r["is_graded"]),
+        "submissions": results
+    }
+
+
+@router.post("/teacher-grade")
+def create_or_update_teacher_grade(
+    answer_id: UUID = Query(..., description="Student answer ID"),
+    points_awarded: float = Query(..., description="Points awarded by teacher"),
+    feedback_text: Optional[str] = Query(None, description="Teacher's feedback"),
+    teacher_id: str = Query(..., description="Teacher user ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update a teacher grade for a student answer.
+    This takes precedence over AI-generated grades.
+    """
+    from app.models.student_answer import StudentAnswer
+    from app.models.question import Question
+    from app.models.ai_feedback import AIFeedback
+    from app.models.teacher_grade import TeacherGrade
+    import uuid
+
+    # Get the student answer
+    answer = db.query(StudentAnswer).filter(StudentAnswer.id == answer_id).first()
+    if not answer:
+        raise HTTPException(status_code=404, detail="Student answer not found")
+
+    # Get the question to validate points
+    question = db.query(Question).filter(Question.id == answer.question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    # Validate points don't exceed maximum
+    if points_awarded > question.points:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Points awarded ({points_awarded}) cannot exceed question points ({question.points})"
+        )
+
+    if points_awarded < 0:
+        raise HTTPException(status_code=400, detail="Points awarded cannot be negative")
+
+    # Get AI suggested score if exists
+    ai_feedback = db.query(AIFeedback).filter(AIFeedback.answer_id == answer_id).first()
+    ai_suggested_score = ai_feedback.points_earned if ai_feedback else None
+
+    # Check if teacher grade already exists
+    teacher_grade = db.query(TeacherGrade).filter(TeacherGrade.answer_id == answer_id).first()
+
+    if teacher_grade:
+        # Update existing grade
+        teacher_grade.points_awarded = points_awarded
+        teacher_grade.feedback_text = feedback_text
+        teacher_grade.ai_suggested_score = ai_suggested_score
+        teacher_grade.overridden_ai = (ai_suggested_score is not None and
+                                       abs(points_awarded - ai_suggested_score) > 0.01)
+        teacher_grade.graded_by = teacher_id
+        # graded_at will auto-update if you have onupdate set, otherwise update manually
+    else:
+        # Create new grade
+        teacher_grade = TeacherGrade(
+            id=uuid.uuid4(),
+            answer_id=answer_id,
+            student_id=answer.student_id,
+            question_id=answer.question_id,
+            module_id=answer.module_id,
+            points_awarded=points_awarded,
+            feedback_text=feedback_text,
+            ai_suggested_score=ai_suggested_score,
+            overridden_ai=(ai_suggested_score is not None and
+                          abs(points_awarded - ai_suggested_score) > 0.01),
+            graded_by=teacher_id
+        )
+        db.add(teacher_grade)
+
+    db.commit()
+    db.refresh(teacher_grade)
+
+    return {
+        "success": True,
+        "grade_id": str(teacher_grade.id),
+        "answer_id": str(answer_id),
+        "points_awarded": points_awarded,
+        "points_possible": question.points,
+        "ai_suggested_score": ai_suggested_score,
+        "overridden_ai": teacher_grade.overridden_ai,
+        "graded_by": teacher_id,
+        "graded_at": teacher_grade.graded_at.isoformat()
+    }
+
+
+@router.get("/teacher-grade/{answer_id}")
+def get_teacher_grade(
+    answer_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Get teacher grade for a specific student answer.
+    """
+    from app.models.teacher_grade import TeacherGrade
+
+    teacher_grade = db.query(TeacherGrade).filter(
+        TeacherGrade.answer_id == answer_id
+    ).first()
+
+    if not teacher_grade:
+        raise HTTPException(status_code=404, detail="Teacher grade not found")
+
+    return {
+        "grade_id": str(teacher_grade.id),
+        "answer_id": str(teacher_grade.answer_id),
+        "student_id": teacher_grade.student_id,
+        "question_id": str(teacher_grade.question_id),
+        "module_id": str(teacher_grade.module_id),
+        "points_awarded": teacher_grade.points_awarded,
+        "feedback_text": teacher_grade.feedback_text,
+        "ai_suggested_score": teacher_grade.ai_suggested_score,
+        "overridden_ai": teacher_grade.overridden_ai,
+        "graded_by": teacher_grade.graded_by,
+        "graded_at": teacher_grade.graded_at.isoformat()
+    }
+
+
+@router.get("/teacher-grades/module/{module_id}/student/{student_id}")
+def get_teacher_grades_for_student(
+    module_id: UUID,
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all teacher grades for a specific student in a module.
+    Returns teacher grades with question details and answer information.
+    """
+    from app.models.teacher_grade import TeacherGrade
+    from app.models.question import Question
+    from app.models.student_answer import StudentAnswer
+
+    # Get all teacher grades for this student in this module
+    teacher_grades = db.query(TeacherGrade).filter(
+        TeacherGrade.module_id == module_id,
+        TeacherGrade.student_id == student_id
+    ).all()
+
+    results = []
+    for grade in teacher_grades:
+        # Get question details
+        question = db.query(Question).filter(Question.id == grade.question_id).first()
+
+        # Get the student answer
+        answer = db.query(StudentAnswer).filter(StudentAnswer.id == grade.answer_id).first()
+
+        results.append({
+            "grade_id": str(grade.id),
+            "answer_id": str(grade.answer_id),
+            "question_id": str(grade.question_id),
+            "question_text": question.text if question else None,
+            "question_type": question.type if question else None,
+            "question_points": question.points if question else None,
+            "student_answer": answer.answer if answer else None,
+            "attempt": answer.attempt if answer else None,
+            "points_awarded": grade.points_awarded,
+            "feedback_text": grade.feedback_text,
+            "ai_suggested_score": grade.ai_suggested_score,
+            "overridden_ai": grade.overridden_ai,
+            "graded_by": grade.graded_by,
+            "graded_at": grade.graded_at.isoformat() if grade.graded_at else None
+        })
+
+    return {
+        "module_id": str(module_id),
+        "student_id": student_id,
+        "total_grades": len(results),
+        "grades": results
+    }
+

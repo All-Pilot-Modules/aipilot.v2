@@ -24,6 +24,7 @@ class UserOut(UserBase):
     created_at: datetime
     updated_at: datetime
     is_active: bool
+    is_email_verified: bool
 
     class Config:
         from_attributes = True

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 // RadioGroup not available - using custom implementation
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -168,8 +169,50 @@ function StudentAssignmentContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <LoadingCard message="Loading assignment..." />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100 dark:from-slate-950 dark:via-blue-950/10 dark:to-slate-900 py-12">
+        <div className="max-w-5xl mx-auto px-6">
+          {/* Header Skeleton */}
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-6">
+              <Skeleton className="h-10 w-24" />
+              <Skeleton className="h-6 w-48" />
+            </div>
+            <Skeleton className="h-10 w-96 mb-4" />
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-5 w-32" />
+            </div>
+          </div>
+
+          {/* Question Card Skeleton */}
+          <Card className="border-2 border-slate-200 dark:border-slate-700 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-900/50 dark:to-slate-800/30 border-b-2">
+              <Skeleton className="h-8 w-3/4 mb-2" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardHeader>
+            <CardContent className="p-8 space-y-6">
+              <div className="space-y-4">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-5/6" />
+              </div>
+
+              {/* Answer options skeleton */}
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <Skeleton className="h-5 w-full" />
+                  </div>
+                ))}
+              </div>
+
+              {/* Submit button skeleton */}
+              <div className="pt-6 border-t-2 border-slate-200 dark:border-slate-700">
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -275,9 +318,9 @@ function StudentAssignmentContent() {
 
                 {question?.image_url && (
                   <div className="border rounded-lg overflow-hidden">
-                    <img 
-                      src={question.image_url} 
-                      alt="Question illustration" 
+                    <img
+                      src={question.image_url}
+                      alt={`Visual content for: ${question.question_text?.substring(0, 150)}${question.question_text?.length > 150 ? '...' : ''}`}
                       className="w-full max-w-md mx-auto"
                     />
                   </div>

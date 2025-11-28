@@ -60,12 +60,8 @@ export default function RegisterForm() {
       console.log('Registering user:', registerData);
       await register(registerData);
 
-      // Auto login after registration
-      await login(formData.email, formData.password);
-
-      // Use window.location.href for full page reload to ensure fresh auth state
-      // This prevents stale state issues with client-side navigation
-      window.location.href = '/mymodules';
+      // Redirect to email verification page instead of auto-login
+      router.push(`/verify-email?email=${encodeURIComponent(formData.email)}`);
     } catch (error) {
       console.error('Registration failed:', error);
 
@@ -112,6 +108,8 @@ export default function RegisterForm() {
                 value={formData.id}
                 onChange={(e) => handleChange('id', e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'register-error' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -123,6 +121,8 @@ export default function RegisterForm() {
                 value={formData.username}
                 onChange={(e) => handleChange('username', e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'register-error' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -134,6 +134,8 @@ export default function RegisterForm() {
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'register-error' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -155,6 +157,8 @@ export default function RegisterForm() {
                 value={formData.password}
                 onChange={(e) => handleChange('password', e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'register-error' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -166,11 +170,18 @@ export default function RegisterForm() {
                 value={formData.confirmPassword}
                 onChange={(e) => handleChange('confirmPassword', e.target.value)}
                 required
+                aria-invalid={error ? 'true' : 'false'}
+                aria-describedby={error ? 'register-error' : undefined}
               />
             </div>
             {error && (
-              <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 p-3 rounded-lg">
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div
+                id="register-error"
+                className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 p-3 rounded-lg"
+                role="alert"
+                aria-live="assertive"
+              >
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <span>{error}</span>
               </div>
             )}
