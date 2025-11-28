@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -8,12 +9,8 @@ import { Button } from "@/components/ui/button";
 import { HelpCircle, Book, MessageCircle, FileText, Users, GraduationCap, BookOpen, Sparkles, BarChart } from "lucide-react";
 import Link from "next/link";
 
-export default function DashboardHelpPage() {
+function HelpPageContent() {
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <SiteHeader />
         <div className="flex flex-1 flex-col gap-4 p-4 md:p-6 lg:p-8">
           {/* Hero Section */}
           <div className="text-center mb-8">
@@ -229,6 +226,28 @@ export default function DashboardHelpPage() {
             </CardContent>
           </Card>
         </div>
+  );
+}
+
+export default function DashboardHelpPage() {
+  return (
+    <SidebarProvider>
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      }>
+        <AppSidebar />
+      </Suspense>
+      <SidebarInset>
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        }>
+          <SiteHeader />
+        </Suspense>
+        <HelpPageContent />
       </SidebarInset>
     </SidebarProvider>
   );
