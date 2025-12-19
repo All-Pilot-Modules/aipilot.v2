@@ -7,7 +7,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 export function SiteHeader() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const module = searchParams?.get('module')
+  const moduleName = searchParams?.get('module')
   
   // Get current page title based on pathname
   const getPageTitle = () => {
@@ -42,11 +42,11 @@ export function SiteHeader() {
               <span className="font-medium text-foreground">{getPageTitle()}</span>
             </>
           )}
-          {module && (
+          {moduleName && (
             <>
               <span className="text-muted-foreground">•</span>
               <span className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full font-medium">
-                {module}
+                {moduleName}
               </span>
             </>
           )}

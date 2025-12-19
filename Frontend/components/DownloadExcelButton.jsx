@@ -5,13 +5,13 @@ import { useParams } from 'next/navigation';
 
 export default function DownloadExcelButton() {
   const params = useParams();
-  const module = params?.module?.toUpperCase();
+  const moduleParam = params?.module?.toUpperCase();
 
   const [error, setError] = useState('');
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(`/api/csv-export?module=${module}`);
+      const response = await fetch(`/api/csv-export?module=${moduleParam}`);
       if (!response.ok) {
         throw new Error('Failed to download file');
       }

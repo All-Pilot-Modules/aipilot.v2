@@ -36,6 +36,7 @@ export function AppSidebar(props) {
   const pathname = usePathname();
   // Check for 'module' param first, fall back to 'module_name' (used in review page)
   // Use empty string as default to ensure consistent rendering
+  // eslint-disable-next-line @next/next/no-assign-module-variable
   const module = searchParams?.get('module') || searchParams?.get('module_name') || '';
 
   // Debug logging

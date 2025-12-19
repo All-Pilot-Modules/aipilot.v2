@@ -55,17 +55,18 @@ export default function FeedbackCritiquesPage() {
         // Fetch module details
         const modulesResponse = await apiClient.get(`/api/modules?teacher_id=${userId}`);
         const modules = modulesResponse || [];
-        const module = modules.find(m => m.name === moduleName);
+        // eslint-disable-next-line @next/next/no-assign-module-variable
+        const foundModule = modules.find(m => m.name === moduleName);
 
-        if (!module) {
+        if (!foundModule) {
           setError("Module not found");
           return;
         }
 
-        setCurrentModule(module);
+        setCurrentModule(foundModule);
 
         // Fetch questions
-        const questionsResponse = await apiClient.get(`/api/student/modules/${module.id}/questions`);
+        const questionsResponse = await apiClient.get(`/api/student/modules/${foundModule.id}/questions`);
         const questionsData = questionsResponse?.data || questionsResponse;
         setQuestions(questionsData);
 
