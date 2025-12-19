@@ -1,5 +1,5 @@
 'use client';
-
+export const dynamic = "force-dynamic";
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +25,9 @@ import { useAuth } from "@/context/AuthContext";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-
+import { connection } from "next/server";
 export default function FeedbackCritiquesPage() {
+  
   const searchParams = useSearchParams();
   const moduleName = searchParams?.get('module');
   const { user, loading: authLoading } = useAuth();
