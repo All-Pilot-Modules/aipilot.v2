@@ -25,10 +25,18 @@ export default function ModuleConsentPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Helper to check if a string is a valid UUID
+  // Helper to check if a string is a valid UUID or valid integer ID
   const isUUID = (str) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     return uuidRegex.test(str);
+  };
+
+  const isValidId = (str) => {
+    // Check if it's a UUID or a valid integer/string ID
+    if (!str) return false;
+    if (isUUID(str)) return true;
+    // Check if it's a valid integer ID (as string or number)
+    return /^\d+$/.test(String(str));
   };
 
   const loadModule = async () => {
@@ -151,8 +159,8 @@ export default function ModuleConsentPage() {
     );
   }
 
-  // Validate that module has a valid UUID before rendering
-  if (error || !module || !module.id || !isUUID(module.id)) {
+  // Validate that module has a valid ID before rendering
+  if (error || !module || !module.id || !isValidId(module.id)) {
     return (
       <SidebarProvider>
         <AppSidebar />
