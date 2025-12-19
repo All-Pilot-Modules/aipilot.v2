@@ -127,7 +127,12 @@ export default function ModuleConsentPage() {
   }, [moduleIdOrName, user]);
 
   const handleUpdate = (updatedModule) => {
-    setModule(updatedModule);
+    // Merge the updated data with existing module to preserve the ID
+    setModule(prevModule => ({
+      ...prevModule,
+      ...updatedModule,
+      id: prevModule.id // Ensure ID is preserved
+    }));
   };
 
   if (loading) {
