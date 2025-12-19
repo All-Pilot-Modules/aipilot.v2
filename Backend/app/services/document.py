@@ -16,7 +16,7 @@ from app.crud.question import bulk_create_questions
 from app.crud.document_chunk import bulk_create_chunks
 from app.utils.text_extractor import extract_text_from_file
 from app.utils.text_chunker import chunk_text
-from app.utils.question_parser import parse_testbank_text_to_questions
+from app.utils.question_parser import parse_testbank_text_to_questions, parse_testbank_hybrid
 from app.services.module import get_or_create_module
 from app.services.storage import storage_service
 from app.services.document_status import update_document_status, set_document_error
@@ -125,7 +125,8 @@ def handle_document_upload(
             print(f"📝 Extracted text length: {len(extracted_text)} characters")
             print(f"📝 First 500 chars: {extracted_text[:500]}")
 
-            parsed_questions = parse_testbank_text_to_questions(extracted_text, module.id, document.id)
+            # Use hybrid parser (regex first, AI fallback if needed)
+            parsed_questions = parse_testbank_hybrid(extracted_text, module.id, document.id, use_ai_fallback=True)
 
             # Save parsed questions to JSON (upload to Supabase as well)
             parsed_json = json.dumps(parsed_questions, indent=2)
@@ -259,7 +260,7 @@ def handle_document_upload(
 
 
 def reparse_testbank_document(db: Session, document_id: UUID):
-    from app.utils.question_parser import parse_testbank_text_to_questions
+    from app.utils.question_parser import parse_testbank_text_to_questions, parse_testbank_hybrid
     from app.crud.question import bulk_create_questions
     from app.models.document import Document
     from app.models.question import Question
@@ -299,7 +300,8 @@ def reparse_testbank_document(db: Session, document_id: UUID):
             print(f"📝 Extracted text length: {len(extracted_text)} characters")
             print(f"📝 First 500 chars: {extracted_text[:500]}")
 
-            parsed_questions = parse_testbank_text_to_questions(extracted_text, module.id, doc.id)
+            # Use hybrid parser (regex first, AI fallback if needed)
+            parsed_questions = parse_testbank_hybrid(extracted_text, module.id, doc.id, use_ai_fallback=True)
 
             # Save parsed questions JSON to Supabase
             parsed_json = json.dumps(parsed_questions, indent=2)

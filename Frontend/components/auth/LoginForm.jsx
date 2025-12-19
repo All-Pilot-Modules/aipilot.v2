@@ -40,8 +40,9 @@ export default function LoginForm() {
     try {
       await login(identifier, password);
 
-      // Use Next.js router for faster navigation (no full page reload)
-      router.push('/mymodules');
+      // Use window.location for navigation to ensure full page reload
+      // This ensures AuthContext reinitializes with the user data from sessionStorage
+      window.location.href = '/mymodules';
     } catch (error) {
       console.error('Login error:', error);
 

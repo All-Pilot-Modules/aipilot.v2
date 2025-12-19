@@ -28,6 +28,8 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 export default function MyModules() {
   const { user, loading, isAuthenticated } = useAuth();
   const [modules, setModules] = useState([]);
+  const [fetchingModules, setFetchingModules] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -64,6 +66,11 @@ export default function MyModules() {
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [moduleToRegenerate, setModuleToRegenerate] = useState(null);
 
+  // Handle client-side mounting
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const fetchModules = async () => {
     try {
       // Ensure user and user.id are available
@@ -73,25 +80,41 @@ export default function MyModules() {
         return;
       }
 
+      setFetchingModules(true);
       console.log('📚 Fetching modules for user:', userId);
       const data = await apiClient.get(`/api/modules?teacher_id=${userId}`);
       setModules(data);
       console.log(`✅ Loaded ${data?.length || 0} modules`);
     } catch (error) {
       console.error('❌ Failed to fetch modules:', error);
+    } finally {
+      setFetchingModules(false);
     }
   };
 
   useEffect(() => {
-    console.log('🔍 MyModules useEffect:', { isAuthenticated, hasUser: !!user, userId: user?.id || user?.sub });
+    if (!mounted) return;
 
-    if (isAuthenticated && user && (user.id || user.sub)) {
-      fetchModules();
-    } else {
-      console.log('⏳ Waiting for auth to complete...', { isAuthenticated, user });
+    console.log('🔍 MyModules useEffect:', {
+      isAuthenticated,
+      hasUser: !!user,
+      userId: user?.id || user?.sub,
+      userObject: user
+    });
+
+    if (isAuthenticated && user) {
+      const userId = user.id || user.sub;
+      if (userId) {
+        console.log('✅ User ID found, fetching modules for:', userId);
+        fetchModules();
+      } else {
+        console.log('⚠️ User object exists but no ID found:', user);
+      }
+    } else if (!loading) {
+      console.log('⏳ Waiting for auth to complete...', { isAuthenticated, user, loading });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user]);
+  }, [mounted, isAuthenticated, user, loading]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -222,10 +245,19 @@ export default function MyModules() {
     }
   };
 
-  // Show loading while auth is initializing
-  if (loading) {
+  // Show loading during SSR or while mounting to prevent hydration errors
+  if (!mounted) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-950 dark:via-blue-950/10 dark:to-purple-950/10 flex items-center justify-center">
+        <LoadingSpinner size="large" text="Loading modules..." />
+      </div>
+    );
+  }
+
+  // Show loading while auth is initializing OR user data not yet available
+  if (loading || (isAuthenticated && !user)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-950 dark:via-blue-950/10 dark:to-purple-950/10 flex items-center justify-center">
         <LoadingSpinner size="large" text="Loading modules..." />
       </div>
     );
@@ -385,160 +417,12 @@ export default function MyModules() {
               <h2 className="text-xl font-semibold text-foreground mb-2">Your Modules</h2>
               <p className="text-sm text-muted-foreground">View and manage all your created modules</p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {modules.map((module) => (
-                <Card key={module.id} className="group hover:shadow-md transition-all duration-200 border bg-card">
-                  <CardContent className="p-6">
-                    <div className="space-y-5">
-                      {/* Header */}
-                      <div className="border-b border-border pb-4">
-                        <h3 className="font-semibold text-lg text-foreground mb-2">{module.name}</h3>
-                        {module.description && (
-                          <p className="text-muted-foreground text-sm leading-relaxed">{module.description}</p>
-                        )}
-                      </div>
-                      
-                      {/* Access Code Section */}
-                      <div className="space-y-3">
-                        <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Student Access Code</Label>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-muted/50 px-4 py-3 rounded-lg border border-border">
-                            <span className="font-mono text-lg font-bold text-foreground tracking-wider">
-                              {module.access_code}
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => copyToClipboard(module.access_code, 'code', module.id)}
-                              className="h-10 w-10 p-0 hover:bg-muted"
-                              title="Copy access code"
-                            >
-                              {copiedItems[`${module.id}-code`] ? (
-                                <Check className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setModuleToRegenerate(module.id);
-                                setShowRegenerateDialog(true);
-                              }}
-                              className="h-10 w-10 p-0 hover:bg-muted"
-                              title="Regenerate access code"
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
 
-                      {/* Join URL Section */}
-                      <div className="space-y-3">
-                        <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Enrollment URL</Label>
-                        <div className="relative">
-                          <div className="bg-muted/30 p-3.5 rounded-lg border border-border">
-                            <p className="text-xs text-foreground/70 font-mono break-all leading-relaxed">
-                              {generateModuleUrl(module)}
-                            </p>
-                          </div>
-                          <div className="flex gap-2 mt-3">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => copyToClipboard(generateModuleUrl(module), 'url', module.id)}
-                              className="flex-1 h-9 hover:bg-muted"
-                            >
-                              {copiedItems[`${module.id}-url`] ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 mr-2 text-green-600" />
-                                  <span className="text-sm font-medium">Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5 mr-2" />
-                                  <span className="text-sm font-medium">Copy URL</span>
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => window.open(generateModuleUrl(module), '_blank')}
-                              className="h-9 px-4 hover:bg-muted"
-                              title="Open in new tab"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="pt-4 border-t border-border">
-                        <div className="space-y-2">
-                          <Button asChild size="lg" className="w-full bg-primary hover:bg-primary/90 font-medium shadow-sm">
-                            <Link href={`/dashboard?module=${encodeURIComponent(module.name)}`}>
-                              Manage Module
-                            </Link>
-                          </Button>
-                          <div className="grid grid-cols-3 gap-2">
-                            <Button
-                              asChild
-                              variant="outline"
-                              size="sm"
-                              className="w-full h-9 text-xs hover:bg-muted"
-                            >
-                              <Link href={`/dashboard/rubric?moduleId=${module.id}&moduleName=${encodeURIComponent(module.name)}`}>
-                                <Settings className="w-3.5 h-3.5 mr-1.5" />
-                                Rubric
-                              </Link>
-                            </Button>
-                            <Button
-                              asChild
-                              variant="outline"
-                              size="sm"
-                              className="w-full h-9 text-xs hover:bg-muted"
-                            >
-                              <Link href={`/module/${module.id}/consent`}>
-                                <FileText className="w-3.5 h-3.5 mr-1.5" />
-                                Consent
-                              </Link>
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => deleteModule(module.id, module.name)}
-                              disabled={deletingModules[module.id]}
-                              className="w-full h-9 text-xs"
-                            >
-                              {deletingModules[module.id] ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white mr-1.5"></div>
-                                  <span className="text-xs">Deleting</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                                  Delete
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {modules.length === 0 && (
+            {fetchingModules && modules.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <LoadingSpinner size="large" text="Loading your modules..." />
+              </div>
+            ) : modules.length === 0 ? (
               <Card className="border-dashed border-2 max-w-md mx-auto">
                 <CardContent className="py-16 text-center">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-6">
@@ -548,6 +432,158 @@ export default function MyModules() {
                   <p className="text-sm text-muted-foreground">Get started by creating your first module using the form on the left.</p>
                 </CardContent>
               </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {modules.map((module) => (
+                  <Card key={module.id} className="group hover:shadow-md transition-all duration-200 border bg-card">
+                    <CardContent className="p-6">
+                      <div className="space-y-5">
+                        {/* Header */}
+                        <div className="border-b border-border pb-4">
+                          <h3 className="font-semibold text-lg text-foreground mb-2">{module.name}</h3>
+                          {module.description && (
+                            <p className="text-muted-foreground text-sm leading-relaxed">{module.description}</p>
+                          )}
+                        </div>
+
+                        {/* Access Code Section */}
+                        <div className="space-y-3">
+                          <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Student Access Code</Label>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-muted/50 px-4 py-3 rounded-lg border border-border">
+                              <span className="font-mono text-lg font-bold text-foreground tracking-wider">
+                                {module.access_code}
+                              </span>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyToClipboard(module.access_code, 'code', module.id)}
+                                className="h-10 w-10 p-0 hover:bg-muted"
+                                title="Copy access code"
+                              >
+                                {copiedItems[`${module.id}-code`] ? (
+                                  <Check className="w-4 h-4 text-green-600" />
+                                ) : (
+                                  <Copy className="w-4 h-4" />
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setModuleToRegenerate(module.id);
+                                  setShowRegenerateDialog(true);
+                                }}
+                                className="h-10 w-10 p-0 hover:bg-muted"
+                                title="Regenerate access code"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Join URL Section */}
+                        <div className="space-y-3">
+                          <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">Enrollment URL</Label>
+                          <div className="relative">
+                            <div className="bg-muted/30 p-3.5 rounded-lg border border-border">
+                              <p className="text-xs text-foreground/70 font-mono break-all leading-relaxed">
+                                {generateModuleUrl(module)}
+                              </p>
+                            </div>
+                            <div className="flex gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyToClipboard(generateModuleUrl(module), 'url', module.id)}
+                                className="flex-1 h-9 hover:bg-muted"
+                              >
+                                {copiedItems[`${module.id}-url`] ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 mr-2 text-green-600" />
+                                    <span className="text-sm font-medium">Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 mr-2" />
+                                    <span className="text-sm font-medium">Copy URL</span>
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => window.open(generateModuleUrl(module), '_blank')}
+                                className="h-9 px-4 hover:bg-muted"
+                                title="Open in new tab"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="pt-4 border-t border-border">
+                          <div className="space-y-2">
+                            <Button asChild size="lg" className="w-full bg-primary hover:bg-primary/90 font-medium shadow-sm">
+                              <Link href={`/dashboard?module=${encodeURIComponent(module.name)}`}>
+                                Manage Module
+                              </Link>
+                            </Button>
+                            <div className="grid grid-cols-3 gap-2">
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-9 text-xs hover:bg-muted"
+                              >
+                                <Link href={`/dashboard/rubric?module=${encodeURIComponent(module.name)}`}>
+                                  <Settings className="w-3.5 h-3.5 mr-1.5" />
+                                  Rubric
+                                </Link>
+                              </Button>
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-9 text-xs hover:bg-muted"
+                              >
+                                <Link href={`/module/${module.id}/consent`}>
+                                  <FileText className="w-3.5 h-3.5 mr-1.5" />
+                                  Consent
+                                </Link>
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => deleteModule(module.id, module.name)}
+                                disabled={deletingModules[module.id]}
+                                className="w-full h-9 text-xs"
+                              >
+                                {deletingModules[module.id] ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white mr-1.5"></div>
+                                    <span className="text-xs">Deleting</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                    Delete
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             )}
           </div>
         </div>

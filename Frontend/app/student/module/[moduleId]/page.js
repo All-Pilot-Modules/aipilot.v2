@@ -35,6 +35,7 @@ import { ErrorAlert } from '@/components/ErrorAlert';
 import { PageLoadingSkeleton, CardSkeleton } from '@/components/SkeletonLoader';
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from '@/lib/errorMessages';
+import { FeedbackCritique } from '@/components/FeedbackCritique';
 
 // Dynamically import heavy components for better code splitting
 const ChatTab = dynamic(() => import('./ChatTab'), {
@@ -1924,6 +1925,17 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                     </div>
                                   )}
                                 </div>
+
+                                {/* Feedback Critique Component - Allow students to rate AI feedback */}
+                                {feedback && feedback.id && !feedback.teacher_grade && moduleAccess?.studentId && question.allow_critique === true && (
+                                  <FeedbackCritique
+                                    feedbackId={feedback.id}
+                                    studentId={moduleAccess.studentId}
+                                    onSubmitSuccess={(critique) => {
+                                      console.log('Feedback critique submitted:', critique);
+                                    }}
+                                  />
+                                )}
                               </>
                             ) : isAnswered ? (
                               <div className="flex items-center justify-center py-12">
@@ -1956,7 +1968,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
 
                                     return (
                                       <>
-                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
                                         <p className="text-gray-600 dark:text-gray-400">Generating feedback for this question...</p>
                                         {pollCount > 10 && (
                                           <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">This may take a minute...</p>

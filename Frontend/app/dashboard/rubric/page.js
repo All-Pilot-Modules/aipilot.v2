@@ -33,11 +33,14 @@ function RubricSettingsContent() {
 
   // Fetch module by name to get moduleId
   useEffect(() => {
-    if (moduleName && user) {
+    if (!loading && moduleName && user) {
       fetchModule();
+    } else if (!loading && moduleName && !user) {
+      // Auth loaded but no user - shouldn't happen but handle it
+      setLoadingRubric(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleName, user]);
+  }, [moduleName, user, loading]);
 
   useEffect(() => {
     if (moduleId) {
@@ -48,15 +51,29 @@ function RubricSettingsContent() {
   }, [moduleId]);
 
   const fetchModule = async () => {
+    if (!moduleName) {
+      setLoadingRubric(false);
+      return;
+    }
+
+    const userId = user?.id || user?.sub;
+    if (!userId) {
+      // User not loaded yet, keep waiting
+      return;
+    }
+
     try {
-      const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+      const response = await apiClient.get(`/api/modules?teacher_id=${userId}`);
       const modules = response?.data || response || [];
       const foundModule = modules.find(m => m.name === moduleName);
       if (foundModule) {
         setModuleId(foundModule.id);
+      } else {
+        setLoadingRubric(false);
       }
     } catch (error) {
       console.error('Failed to fetch module:', error);
+      setLoadingRubric(false);
     }
   };
 
@@ -217,37 +234,23 @@ function RubricSettingsContent() {
       <AppSidebar />
       <SidebarInset>
         <SiteHeader />
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100 dark:from-slate-950 dark:via-blue-950/10 dark:to-slate-900">
-          <div className="p-8 max-w-[1600px] mx-auto">
-            {/* Premium Header */}
-            <div className="mb-10">
-              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-6">
-                <div className="space-y-4 flex-1">
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl blur-xl opacity-25"></div>
-                      <div className="relative p-4 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-xl">
-                        <Save className="w-8 h-8 text-white" />
-                      </div>
-                    </div>
-                    <div>
-                      <h1 className="text-4xl font-black bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 dark:from-slate-100 dark:via-blue-100 dark:to-purple-100 bg-clip-text text-transparent">
-                        AI Grading Rubric
-                      </h1>
-                      {moduleName && (
-                        <Badge className="mt-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0 shadow-md">
-                          📚 Module: {moduleName}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-slate-600 dark:text-slate-400 text-base max-w-3xl leading-relaxed">
-                    Configure AI feedback criteria and grading standards to provide personalized,
-                    consistent feedback to your students based on your course materials.
-                  </p>
+        <div className="min-h-screen bg-background">
+          <div className="p-6 max-w-[1400px] mx-auto">
+            {/* Clean Header */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground mb-1">
+                    AI Feedback Rubric
+                  </h1>
+                  {moduleName && (
+                    <p className="text-sm text-muted-foreground">
+                      Module: <span className="font-medium">{moduleName}</span>
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex gap-3 items-start lg:items-center">
+                <div className="flex gap-2">
                   {hasChanges && (
                     <Button
                       variant="outline"
@@ -255,27 +258,24 @@ function RubricSettingsContent() {
                         setRubric(originalRubric);
                         setHasChanges(false);
                       }}
-                      className="shadow-md hover:shadow-lg transition-all border-2 border-slate-300 dark:border-slate-600 hover:border-red-400 dark:hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
                     >
                       <RefreshCw className="w-4 h-4 mr-2" />
-                      Discard Changes
+                      Discard
                     </Button>
                   )}
                   <Button
                     onClick={handleSave}
                     disabled={isSaving || !hasChanges}
-                    size="lg"
-                    className="shadow-xl hover:shadow-2xl transition-all bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 border-0 px-8 font-semibold"
                   >
                     {isSaving ? (
                       <>
                         <Spinner size="sm" className="mr-2" />
-                        Saving Changes...
+                        Saving...
                       </>
                     ) : (
                       <>
-                        <Save className="w-5 h-5 mr-2" />
-                        Save Settings
+                        <Save className="w-4 h-4 mr-2" />
+                        Save Changes
                       </>
                     )}
                   </Button>

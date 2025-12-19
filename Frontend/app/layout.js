@@ -1,12 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { ModeToggle } from "@/components/mode-toggle";
-import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from '@vercel/analytics/react';
-import AuthHeader from "@/components/auth/AuthHeader";
-import ErrorBoundary from "@/components/ErrorBoundary";
-import { SkipNav } from "@/components/SkipNav";
+import { ClientProviders } from "@/components/ClientProviders";
 
 
 const geistSans = Geist({
@@ -34,20 +29,9 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SkipNav />
-        <ErrorBoundary>
-          <AuthProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              <AuthHeader />
-              {children}
-            </ThemeProvider>
-          </AuthProvider>
-        </ErrorBoundary>
+        <ClientProviders>
+          {children}
+        </ClientProviders>
         <Analytics />
       </body>
     </html>

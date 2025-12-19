@@ -45,6 +45,7 @@ function DocumentsContent() {
   const [documents, setDocuments] = useState([]);
   const [currentModule, setCurrentModule] = useState(null);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [availableModules, setAvailableModules] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -61,18 +62,38 @@ function DocumentsContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationForm, setGenerationForm] = useState({ num_short: 0, num_long: 0, num_mcq: 0 });
   const [uploadStage, setUploadStage] = useState(0);
+  const [isTestbank, setIsTestbank] = useState(false);
 
   const fetchModuleAndDocuments = useCallback(async () => {
     try {
       setIsLoadingDocuments(true);
-      const moduleData = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+
+      // Get user ID - try both id and sub fields
+      const userId = user?.id || user?.sub;
+      console.log('🔍 Documents page - user object:', { userId, fullUser: user });
+
+      if (!userId) {
+        console.warn('⚠️ User ID not available yet');
+        setIsLoadingDocuments(false);
+        return;
+      }
+
+      console.log('📚 Fetching modules for user:', userId);
+      const moduleData = await apiClient.get(`/api/modules?teacher_id=${userId}`);
+      console.log('📦 Received modules:', moduleData);
+      setAvailableModules(moduleData || []);
+
       // eslint-disable-next-line @next/next/no-assign-module-variable
       const module = moduleData.find(m => m.name === moduleName);
 
       if (module) {
         setCurrentModule(module);
-        const documentsData = await apiClient.get(`/api/documents?teacher_id=${user.id}&module_id=${module.id}`);
+        const documentsData = await apiClient.get(`/api/documents?teacher_id=${userId}&module_id=${module.id}`);
         setDocuments(documentsData);
+      } else {
+        console.log("Available modules:", moduleData.map(m => m.name));
+        console.warn(`Module "${moduleName}" not found. Please create a module or select an existing one.`);
+        setCurrentModule(null);
       }
     } catch (error) {
       console.error("Failed to fetch module or documents:", error);
@@ -92,6 +113,7 @@ function DocumentsContent() {
   useEffect(() => {
     if (!isUploadOpen) {
       setUploadForm({ title: "", file: null });
+      setIsTestbank(false);
     }
   }, [isUploadOpen]);
 
@@ -99,17 +121,20 @@ function DocumentsContent() {
   useEffect(() => {
     if (isUploading) {
       setUploadStage(0);
-      const stages = [0, 1, 2]; // uploading, extracting, embedding
+      // Different stages for testbank vs regular documents
+      const stages = isTestbank
+        ? [0, 1, 2, 3] // uploading, extracting, parsing questions, saving
+        : [0, 1, 2]; // uploading, extracting, embedding
       let currentStageIndex = 0;
 
       const interval = setInterval(() => {
         currentStageIndex = (currentStageIndex + 1) % stages.length;
         setUploadStage(stages[currentStageIndex]);
-      }, 2000); // Change stage every 2 seconds
+      }, isTestbank ? 2500 : 2000); // Slightly slower for testbank (more stages)
 
       return () => clearInterval(interval);
     }
-  }, [isUploading]);
+  }, [isUploading, isTestbank]);
 
   const getFileIcon = (type) => {
     switch (type?.toLowerCase()) {
@@ -202,14 +227,29 @@ function DocumentsContent() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!uploadForm.file || !currentModule) return;
+
+    if (!uploadForm.file) {
+      alert("Please select a file to upload");
+      return;
+    }
+
+    if (!currentModule) {
+      alert("Module not found. Please refresh the page and try again.");
+      return;
+    }
+
+    const userId = user?.id || user?.sub;
+    if (!userId) {
+      alert("User session error. Please refresh the page and try again.");
+      return;
+    }
 
     try {
       setIsUploading(true);
       const formData = new FormData();
       formData.append("file", uploadForm.file);
       formData.append("module_name", currentModule.name);
-      formData.append("teacher_id", user.id);
+      formData.append("teacher_id", userId);
       formData.append("title", uploadForm.title || uploadForm.file.name);
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -226,10 +266,12 @@ function DocumentsContent() {
         setUploadForm({ title: "", file: null });
         setIsUploadOpen(false);
       } else {
-        console.error("Upload failed:", response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.detail || `Upload failed: ${response.statusText}`);
       }
     } catch (error) {
       console.error("Upload error:", error);
+      alert("Upload failed. Please check your connection and try again.");
     } finally {
       setIsUploading(false);
     }
@@ -323,23 +365,132 @@ function DocumentsContent() {
     }
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated)
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl mb-4">Access Denied</h1>
-        <Button asChild><Link href="/sign-in">Sign In</Link></Button>
-      </div>
+      <SidebarProvider>
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-screen bg-background">
+            <Card className="max-w-md w-full mx-4">
+              <CardContent className="pt-6 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
+                <p className="text-muted-foreground mb-6">
+                  Please sign in to access the documents page.
+                </p>
+                <Button asChild size="lg">
+                  <Link href="/sign-in">Sign In</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
 
   if (!moduleName)
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl mb-4">No Module Selected</h1>
-        <Button asChild><Link href="/mymodules">Go to My Modules</Link></Button>
-      </div>
+      <SidebarProvider>
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-screen bg-background">
+            <Card className="max-w-md w-full mx-4">
+              <CardContent className="pt-6 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-8 h-8 text-orange-600 dark:text-orange-400" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">No Module Selected</h2>
+                <p className="text-muted-foreground mb-6">
+                  Please select a module from your modules list to view and upload documents.
+                </p>
+                <Button asChild size="lg">
+                  <Link href="/mymodules">
+                    <FolderOpen className="w-5 h-5 mr-2" />
+                    Go to My Modules
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     );
+
+  // Show error if module not found after loading
+  if (!isLoadingDocuments && !currentModule && moduleName) {
+    return (
+      <SidebarProvider>
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-screen bg-background">
+            <Card className="max-w-lg w-full mx-4">
+              <CardContent className="pt-6 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-8 h-8 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Module Not Found</h2>
+                <p className="text-muted-foreground mb-4">
+                  The module &quot;{moduleName}&quot; does not exist.
+                </p>
+                {availableModules.length === 0 ? (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      You don&apos;t have any modules yet. Create your first module to get started!
+                    </p>
+                    <Button asChild size="lg">
+                      <Link href="/mymodules">
+                        <Plus className="w-5 h-5 mr-2" />
+                        Create Your First Module
+                      </Link>
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Available modules:
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center mb-6">
+                      {availableModules.map((mod) => (
+                        <Badge key={mod.id} variant="secondary" className="text-sm">
+                          {mod.name}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="flex gap-3 justify-center">
+                      <Button asChild variant="outline">
+                        <Link href="/mymodules">
+                          <FolderOpen className="w-5 h-5 mr-2" />
+                          View All Modules
+                        </Link>
+                      </Button>
+                      <Button asChild>
+                        <Link href={`/dashboard/documents?module=${availableModules[0].name}`}>
+                          Go to {availableModules[0].name}
+                        </Link>
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
   // Calculate document statistics
   const totalSize = documents.reduce((acc, doc) => acc + (doc.file_size || 0), 0);
@@ -422,60 +573,134 @@ function DocumentsContent() {
                           <div className="flex flex-col items-center justify-center space-y-8">
                             {/* Large Spinner */}
                             <div className="relative">
-                              <div className="w-32 h-32 border-8 border-primary/10 rounded-full"></div>
-                              <div className="w-32 h-32 border-8 border-primary border-t-transparent rounded-full animate-spin absolute top-0"></div>
-                              <div className="w-24 h-24 border-4 border-primary/30 border-b-transparent rounded-full animate-spin absolute top-4 left-4" style={{ animationDuration: '3s', animationDirection: 'reverse' }}></div>
-                              <Upload className="w-12 h-12 text-primary absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                              {isTestbank ? (
+                                <>
+                                  <div className="w-32 h-32 border-8 border-purple-200/30 rounded-full"></div>
+                                  <div className="w-32 h-32 border-8 border-purple-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+                                  <div className="w-24 h-24 border-4 border-pink-500/40 border-b-transparent rounded-full animate-spin absolute top-4 left-4" style={{ animationDuration: '3s', animationDirection: 'reverse' }}></div>
+                                  <Sparkles className="w-12 h-12 text-purple-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                                </>
+                              ) : (
+                                <>
+                                  <div className="w-32 h-32 border-8 border-primary/10 rounded-full"></div>
+                                  <div className="w-32 h-32 border-8 border-primary border-t-transparent rounded-full animate-spin absolute top-0"></div>
+                                  <div className="w-24 h-24 border-4 border-primary/30 border-b-transparent rounded-full animate-spin absolute top-4 left-4" style={{ animationDuration: '3s', animationDirection: 'reverse' }}></div>
+                                  <Upload className="w-12 h-12 text-primary absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                                </>
+                              )}
                             </div>
 
                             {/* Stage Info */}
                             <div className="text-center space-y-3">
-                              <h3 className="text-3xl font-bold">
-                                {uploadStage === 0 && 'Uploading Document'}
-                                {uploadStage === 1 && 'Extracting Content'}
-                                {uploadStage === 2 && 'Embedding Text'}
-                              </h3>
-                              <p className="text-lg text-muted-foreground">
-                                {uploadStage === 0 && 'Transferring your file to the server...'}
-                                {uploadStage === 1 && 'Analyzing and extracting text from document...'}
-                                {uploadStage === 2 && 'Creating AI embeddings for smart search...'}
-                              </p>
+                              {isTestbank ? (
+                                <>
+                                  <h3 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent">
+                                    {uploadStage === 0 && 'Uploading Testbank'}
+                                    {uploadStage === 1 && 'Extracting Questions'}
+                                    {uploadStage === 2 && 'Parsing Questions'}
+                                    {uploadStage === 3 && 'Saving to Database'}
+                                  </h3>
+                                  <p className="text-lg text-muted-foreground">
+                                    {uploadStage === 0 && 'Uploading your testbank file to the server...'}
+                                    {uploadStage === 1 && 'AI is analyzing and extracting text from testbank...'}
+                                    {uploadStage === 2 && 'Identifying questions, options, and correct answers...'}
+                                    {uploadStage === 3 && 'Saving questions to your question bank...'}
+                                  </p>
+                                </>
+                              ) : (
+                                <>
+                                  <h3 className="text-3xl font-bold">
+                                    {uploadStage === 0 && 'Uploading Document'}
+                                    {uploadStage === 1 && 'Extracting Content'}
+                                    {uploadStage === 2 && 'Embedding Text'}
+                                  </h3>
+                                  <p className="text-lg text-muted-foreground">
+                                    {uploadStage === 0 && 'Transferring your file to the server...'}
+                                    {uploadStage === 1 && 'Analyzing and extracting text from document...'}
+                                    {uploadStage === 2 && 'Creating AI embeddings for smart search...'}
+                                  </p>
+                                </>
+                              )}
                               {uploadForm.file && (
-                                <div className="mt-6 p-6 bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl inline-block border border-primary/20">
+                                <div className={`mt-6 p-6 bg-gradient-to-br rounded-xl inline-block border ${
+                                  isTestbank
+                                    ? 'from-purple-50 via-pink-50 to-purple-50 dark:from-purple-950/30 dark:via-pink-950/20 dark:to-purple-950/30 border-purple-200 dark:border-purple-800'
+                                    : 'from-primary/5 to-primary/10 border-primary/20'
+                                }`}>
                                   <div className="flex items-center gap-3 mb-3">
-                                    <FileCheck className="w-6 h-6 text-primary" />
+                                    <FileCheck className={`w-6 h-6 ${isTestbank ? 'text-purple-600' : 'text-primary'}`} />
                                     <p className="text-base font-semibold">{uploadForm.file.name}</p>
                                   </div>
                                   <p className="text-sm text-muted-foreground">
                                     {formatFileSize(uploadForm.file.size)}
                                   </p>
+                                  {isTestbank && (
+                                    <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-purple-200/50 dark:bg-purple-900/50 rounded-full">
+                                      <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                      <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
+                                        Testbank File
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
 
                             {/* Stage Progress Indicators */}
-                            <div className="flex items-center gap-4 mt-4">
-                              <div className="flex flex-col items-center gap-2">
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 0 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
-                                  <Upload className="w-6 h-6" />
+                            {isTestbank ? (
+                              <div className="flex items-center gap-3 mt-4">
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 0 ? 'bg-purple-600 text-white scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <Upload className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 0 ? 'text-purple-600' : 'text-muted-foreground'}`}>Upload</span>
                                 </div>
-                                <span className={`text-xs font-medium ${uploadStage >= 0 ? 'text-primary' : 'text-muted-foreground'}`}>Upload</span>
-                              </div>
-                              <div className={`w-16 h-1 rounded-full transition-all ${uploadStage >= 1 ? 'bg-primary' : 'bg-muted'}`}></div>
-                              <div className="flex flex-col items-center gap-2">
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 1 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
-                                  <Database className="w-6 h-6" />
+                                <div className={`w-12 h-1 rounded-full transition-all ${uploadStage >= 1 ? 'bg-purple-600' : 'bg-muted'}`}></div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 1 ? 'bg-purple-600 text-white scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <FileText className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 1 ? 'text-purple-600' : 'text-muted-foreground'}`}>Extract</span>
                                 </div>
-                                <span className={`text-xs font-medium ${uploadStage >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Extract</span>
-                              </div>
-                              <div className={`w-16 h-1 rounded-full transition-all ${uploadStage >= 2 ? 'bg-primary' : 'bg-muted'}`}></div>
-                              <div className="flex flex-col items-center gap-2">
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 2 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
-                                  <Sparkles className="w-6 h-6" />
+                                <div className={`w-12 h-1 rounded-full transition-all ${uploadStage >= 2 ? 'bg-purple-600' : 'bg-muted'}`}></div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 2 ? 'bg-purple-600 text-white scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <Cpu className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 2 ? 'text-purple-600' : 'text-muted-foreground'}`}>Parse</span>
                                 </div>
-                                <span className={`text-xs font-medium ${uploadStage >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Embed</span>
+                                <div className={`w-12 h-1 rounded-full transition-all ${uploadStage >= 3 ? 'bg-purple-600' : 'bg-muted'}`}></div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 3 ? 'bg-purple-600 text-white scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <CheckCircle2 className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 3 ? 'text-purple-600' : 'text-muted-foreground'}`}>Save</span>
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="flex items-center gap-4 mt-4">
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 0 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <Upload className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 0 ? 'text-primary' : 'text-muted-foreground'}`}>Upload</span>
+                                </div>
+                                <div className={`w-16 h-1 rounded-full transition-all ${uploadStage >= 1 ? 'bg-primary' : 'bg-muted'}`}></div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 1 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <Database className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>Extract</span>
+                                </div>
+                                <div className={`w-16 h-1 rounded-full transition-all ${uploadStage >= 2 ? 'bg-primary' : 'bg-muted'}`}></div>
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${uploadStage >= 2 ? 'bg-primary text-primary-foreground scale-110' : 'bg-muted text-muted-foreground'}`}>
+                                    <Sparkles className="w-6 h-6" />
+                                  </div>
+                                  <span className={`text-xs font-medium ${uploadStage >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>Embed</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -495,16 +720,38 @@ function DocumentsContent() {
                               <Input
                                 id="file"
                                 type="file"
-                                onChange={(e) => setUploadForm({ ...uploadForm, file: e.target.files[0] })}
+                                onChange={(e) => {
+                                  const selectedFile = e.target.files[0];
+                                  setUploadForm({ ...uploadForm, file: selectedFile });
+                                  // Detect if this is a testbank file
+                                  if (selectedFile) {
+                                    const isTestbankFile = selectedFile.name.toLowerCase().includes('testbank');
+                                    setIsTestbank(isTestbankFile);
+                                    console.log('📋 File selected:', selectedFile.name, '| Is testbank:', isTestbankFile);
+                                  }
+                                }}
                                 required
                               />
                               {uploadForm.file && (
-                                <div className="mt-2 p-3 bg-muted rounded-lg flex items-center gap-2 text-sm">
-                                  <FileCheck className="w-4 h-4 text-green-500" />
-                                  <span className="font-medium">{uploadForm.file.name}</span>
-                                  <span className="text-muted-foreground ml-auto">
-                                    {formatFileSize(uploadForm.file.size)}
-                                  </span>
+                                <div className="mt-2 p-3 bg-muted rounded-lg">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <FileCheck className="w-4 h-4 text-green-500" />
+                                    <span className="font-medium">{uploadForm.file.name}</span>
+                                    <span className="text-muted-foreground ml-auto">
+                                      {formatFileSize(uploadForm.file.size)}
+                                    </span>
+                                  </div>
+                                  {isTestbank && (
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800">
+                                        <Sparkles className="w-3 h-3 mr-1" />
+                                        Testbank Detected
+                                      </Badge>
+                                      <span className="text-xs text-muted-foreground">
+                                        Questions will be auto-extracted
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -517,16 +764,19 @@ function DocumentsContent() {
                                 placeholder="Leave empty to use filename"
                               />
                             </div>
+                            <DialogFooter>
+                              <Button type="button" variant="outline" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>
+                                Cancel
+                              </Button>
+                              <Button
+                                type="submit"
+                                disabled={isUploading || !uploadForm.file}
+                              >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload
+                              </Button>
+                            </DialogFooter>
                           </form>
-                          <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>
-                              Cancel
-                            </Button>
-                            <Button onClick={handleUpload} disabled={isUploading || !uploadForm.file}>
-                              <Upload className="w-4 h-4 mr-2" />
-                              Upload
-                            </Button>
-                          </DialogFooter>
                         </>
                       )}
                     </DialogContent>
@@ -927,16 +1177,16 @@ function DocumentsContent() {
                       )}
                     </div>
                   )}
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">
+                      <FileCheck className="w-4 h-4 mr-2" />
+                      Save Changes
+                    </Button>
+                  </DialogFooter>
                 </form>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsEditOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleEdit}>
-                    <FileCheck className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </Button>
-                </DialogFooter>
               </DialogContent>
             </Dialog>
 
@@ -1087,9 +1337,9 @@ function DocumentsContent() {
                         </p>
                       </div>
                     </div>
-                    </form>
                     <DialogFooter>
                       <Button
+                        type="button"
                         variant="outline"
                         onClick={() => {
                           setIsGenerateOpen(false);
@@ -1101,7 +1351,7 @@ function DocumentsContent() {
                         Cancel
                       </Button>
                       <Button
-                        onClick={handleGenerateQuestions}
+                        type="submit"
                         disabled={isGenerating || (generationForm.num_short + generationForm.num_long + generationForm.num_mcq === 0)}
                         className="bg-purple-600 hover:bg-purple-700"
                       >
@@ -1109,6 +1359,7 @@ function DocumentsContent() {
                         Generate Questions
                       </Button>
                     </DialogFooter>
+                    </form>
                   </>
                 )}
               </DialogContent>

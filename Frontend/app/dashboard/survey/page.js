@@ -47,11 +47,26 @@ function SurveyEditorContent() {
   // Fetch module by name to get moduleId
   useEffect(() => {
     const fetchModule = async () => {
-      if (!moduleName || !user) return;
+      if (!moduleName) {
+        setError("No module specified. Please select a module from the sidebar.");
+        setLoading(false);
+        return;
+      }
+
+      if (!user) {
+        // User not loaded yet, keep waiting
+        return;
+      }
 
       try {
-        setLoading(true);
-        const response = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+        const userId = user.id || user.sub;
+        if (!userId) {
+          setError("User ID not available");
+          setLoading(false);
+          return;
+        }
+
+        const response = await apiClient.get(`/api/modules?teacher_id=${userId}`);
         const modules = response?.data || response || [];
         const foundModule = modules.find(m => m.name === moduleName);
         if (foundModule) {
@@ -59,10 +74,12 @@ function SurveyEditorContent() {
           setModule(foundModule);
         } else {
           setError("Module not found");
+          setLoading(false);
         }
       } catch (error) {
         console.error('Failed to fetch module:', error);
         setError("Failed to fetch module");
+        setLoading(false);
       }
     };
 

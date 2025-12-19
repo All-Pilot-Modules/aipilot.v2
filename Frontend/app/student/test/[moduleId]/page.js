@@ -34,17 +34,18 @@ import { FullPageLoader } from "@/components/LoadingSpinner";
 import { InlineError } from '@/components/ErrorAlert';
 import { QuestionSkeleton, PageLoadingSkeleton } from '@/components/SkeletonLoader';
 import { getErrorMessage } from '@/lib/errorMessages';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Dynamically import heavy components
-const AlertDialog = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialog })), { ssr: false });
-const AlertDialogAction = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogAction })), { ssr: false });
-const AlertDialogCancel = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogCancel })), { ssr: false });
-const AlertDialogContent = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogContent })), { ssr: false });
-const AlertDialogDescription = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogDescription })), { ssr: false });
-const AlertDialogFooter = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogFooter })), { ssr: false });
-const AlertDialogHeader = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogHeader })), { ssr: false });
-const AlertDialogTitle = dynamic(() => import("@/components/ui/alert-dialog").then(mod => ({ default: mod.AlertDialogTitle })), { ssr: false });
-
 const PrefillControlPanel = dynamic(() => import("@/components/PrefillControlPanel"), {
   loading: () => null,
   ssr: false
@@ -66,7 +67,6 @@ const StudentTestPage = memo(function StudentTestPage() {
   const [timeSpent, setTimeSpent] = useState(0);
   const [startTime] = useState(Date.now());
   const [isCompleted, setIsCompleted] = useState(false);
-  const [autoSaveTimeout, setAutoSaveTimeout] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // 'saving', 'saved', 'error'
   const [feedback, setFeedback] = useState({}); // Store feedback for each question
   const [showFeedback, setShowFeedback] = useState({}); // Track which feedback is shown
@@ -74,6 +74,8 @@ const StudentTestPage = memo(function StudentTestPage() {
 
   // Ref to track current answers for race condition prevention
   const answersRef = useRef({});
+  // Ref for auto-save timeout to avoid triggering re-renders
+  const autoSaveTimeoutRef = useRef(null);
 
   // Prefill functionality states
   const [previousAttempts, setPreviousAttempts] = useState([]); // Array of {attemptNumber, answers, feedback}
@@ -90,31 +92,6 @@ const StudentTestPage = memo(function StudentTestPage() {
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
-
-  useEffect(() => {
-    // Check access
-    const accessData = sessionStorage.getItem('student_module_access');
-    if (!accessData || String(JSON.parse(accessData).moduleId) !== String(moduleId)) {
-      router.push('/join');
-      return;
-    }
-
-    const access = JSON.parse(accessData);
-    setModuleAccess(access);
-    loadTestData(access);
-    
-    // Track time spent
-    const interval = setInterval(() => {
-      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-      if (autoSaveTimeout) {
-        clearTimeout(autoSaveTimeout);
-      }
-    };
-  }, [moduleId, router, startTime, loadTestData, autoSaveTimeout]);
 
   const loadTestData = useCallback(async (access) => {
     try {
@@ -311,6 +288,32 @@ const StudentTestPage = memo(function StudentTestPage() {
     }
   }, [moduleId]);
 
+  useEffect(() => {
+    // Check access
+    const accessData = sessionStorage.getItem('student_module_access');
+    if (!accessData || String(JSON.parse(accessData).moduleId) !== String(moduleId)) {
+      router.push('/join');
+      return;
+    }
+
+    const access = JSON.parse(accessData);
+    setModuleAccess(access);
+    loadTestData(access);
+
+    // Track time spent
+    const interval = setInterval(() => {
+      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      // Cleanup auto-save timeout on unmount
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [moduleId, router, startTime, loadTestData]);
+
   const updateAnswer = (questionId, answer) => {
     // Check if answer is the same to prevent duplicate API calls
     if (answers[questionId] === answer) return;
@@ -365,9 +368,10 @@ const StudentTestPage = memo(function StudentTestPage() {
       return;
     }
 
-    // Clear existing timeout
-    if (autoSaveTimeout) {
-      clearTimeout(autoSaveTimeout);
+    // Clear existing timeout using ref to avoid state update
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
     }
 
     const question = questions.find(q => q.id === questionId);
@@ -546,7 +550,7 @@ const StudentTestPage = memo(function StudentTestPage() {
         }
       }, 1200); // Slightly faster debounce
 
-      setAutoSaveTimeout(timeoutId);
+      autoSaveTimeoutRef.current = timeoutId;
     }
   };
 

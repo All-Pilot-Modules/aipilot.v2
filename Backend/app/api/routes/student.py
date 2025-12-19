@@ -1028,3 +1028,198 @@ def get_feedback_status(
         "all_complete": all_complete,
         "questions": feedback_status
     }
+
+# 💬 Submit or update feedback critique (student rates AI feedback)
+@router.post("/feedback/{feedback_id}/critique")
+def create_or_update_feedback_critique(
+    feedback_id: UUID,
+    student_id: str = Query(..., description="Student ID"),
+    rating: int = Query(..., description="Rating from 1-5", ge=1, le=5),
+    comment: str = Query(None, description="Optional comment"),
+    feedback_type: str = Query(None, description="Category: helpful, not_helpful, incorrect, too_vague, too_harsh"),
+    db: Session = Depends(get_db)
+):
+    """
+    Allow students to rate and comment on AI-generated feedback.
+    This helps improve feedback quality by collecting student opinions.
+    If student has already critiqued this feedback, updates the existing critique.
+    """
+    from app.models.feedback_critique import FeedbackCritique
+    from app.models.ai_feedback import AIFeedback
+
+    # Verify feedback exists
+    feedback = db.query(AIFeedback).filter(AIFeedback.id == feedback_id).first()
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+
+    # Check if student has already critiqued this feedback
+    existing_critique = db.query(FeedbackCritique).filter(
+        FeedbackCritique.feedback_id == feedback_id,
+        FeedbackCritique.student_id == student_id
+    ).first()
+
+    if existing_critique:
+        # Update existing critique
+        existing_critique.rating = rating
+        existing_critique.comment = comment
+        existing_critique.feedback_type = feedback_type
+        from datetime import datetime, timezone
+        existing_critique.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing_critique)
+
+        logger.info(f"✏️ Student {student_id} updated critique for feedback {feedback_id}: {rating}/5")
+
+        return {
+            "success": True,
+            "critique_id": str(existing_critique.id),
+            "message": "Feedback critique updated successfully",
+            "critique": {
+                "id": str(existing_critique.id),
+                "feedback_id": str(existing_critique.feedback_id),
+                "rating": existing_critique.rating,
+                "comment": existing_critique.comment,
+                "feedback_type": existing_critique.feedback_type,
+                "created_at": existing_critique.created_at.isoformat(),
+                "updated_at": existing_critique.updated_at.isoformat()
+            }
+        }
+    else:
+        # Create new critique
+        critique = FeedbackCritique(
+            feedback_id=feedback_id,
+            student_id=student_id,
+            rating=rating,
+            comment=comment,
+            feedback_type=feedback_type
+        )
+        db.add(critique)
+        db.commit()
+        db.refresh(critique)
+
+        logger.info(f"💬 Student {student_id} critiqued feedback {feedback_id}: {rating}/5")
+
+        return {
+            "success": True,
+            "critique_id": str(critique.id),
+            "message": "Feedback critique submitted successfully",
+            "critique": {
+                "id": str(critique.id),
+                "feedback_id": str(critique.feedback_id),
+                "rating": critique.rating,
+                "comment": critique.comment,
+                "feedback_type": critique.feedback_type,
+                "created_at": critique.created_at.isoformat(),
+                "updated_at": critique.updated_at.isoformat()
+            }
+        }
+
+# 📊 Get feedback critique for a specific feedback
+@router.get("/feedback/{feedback_id}/critique")
+def get_feedback_critique(
+    feedback_id: UUID,
+    student_id: str = Query(..., description="Student ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get student's critique of a specific feedback (if it exists)
+    """
+    from app.models.feedback_critique import FeedbackCritique
+
+    critique = db.query(FeedbackCritique).filter(
+        FeedbackCritique.feedback_id == feedback_id,
+        FeedbackCritique.student_id == student_id
+    ).first()
+
+    if not critique:
+        return {
+            "has_critique": False,
+            "critique": None
+        }
+
+    return {
+        "has_critique": True,
+        "critique": {
+            "id": str(critique.id),
+            "feedback_id": str(critique.feedback_id),
+            "rating": critique.rating,
+            "comment": critique.comment,
+            "feedback_type": critique.feedback_type,
+            "created_at": critique.created_at.isoformat(),
+            "updated_at": critique.updated_at.isoformat()
+        }
+    }
+
+# 📈 Get all feedback critiques for a module (for analytics/teacher view)
+@router.get("/modules/{module_id}/feedback-critiques")
+def get_module_feedback_critiques(
+    module_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all feedback critiques for a module.
+    Useful for teachers to see what students think about AI feedback quality.
+    """
+    from app.models.feedback_critique import FeedbackCritique
+    from app.models.ai_feedback import AIFeedback
+    from app.models.student_answer import StudentAnswer
+
+    # Get all feedback for this module
+    feedbacks = db.query(AIFeedback).join(StudentAnswer).filter(
+        StudentAnswer.module_id == module_id
+    ).all()
+
+    feedback_ids = [fb.id for fb in feedbacks]
+
+    # Get all critiques for these feedbacks
+    critiques = db.query(FeedbackCritique).filter(
+        FeedbackCritique.feedback_id.in_(feedback_ids)
+    ).all()
+
+    # Calculate statistics
+    total_critiques = len(critiques)
+    if total_critiques == 0:
+        return {
+            "module_id": str(module_id),
+            "total_critiques": 0,
+            "average_rating": None,
+            "rating_distribution": {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+            "feedback_types": {},
+            "critiques": []
+        }
+
+    # Calculate statistics
+    ratings = [c.rating for c in critiques]
+    average_rating = sum(ratings) / len(ratings)
+
+    rating_distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    for rating in ratings:
+        rating_distribution[rating] += 1
+
+    feedback_types = {}
+    for critique in critiques:
+        if critique.feedback_type:
+            feedback_types[critique.feedback_type] = feedback_types.get(critique.feedback_type, 0) + 1
+
+    return {
+        "module_id": str(module_id),
+        "total_critiques": total_critiques,
+        "total_feedbacks": len(feedbacks),
+        "critique_rate": round((total_critiques / len(feedbacks) * 100), 1) if feedbacks else 0,
+        "average_rating": round(average_rating, 2),
+        "rating_distribution": rating_distribution,
+        "feedback_types": feedback_types,
+        "critiques": [
+            {
+                "id": str(c.id),
+                "feedback_id": str(c.feedback_id),
+                "student_id": c.student_id,
+                "rating": c.rating,
+                "comment": c.comment,
+                "feedback_type": c.feedback_type,
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat()
+            }
+            for c in critiques
+        ]
+    }

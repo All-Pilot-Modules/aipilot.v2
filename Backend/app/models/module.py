@@ -66,7 +66,21 @@ DEFAULT_SURVEY_QUESTIONS = [
         "placeholder": "Any other feedback you'd like to share..."
     }
 ]
+DEAFULT_CHATBOT_INSTRUCTIONS="""You are a helpful and encouraging AI tutor for this course.
 
+Response Style:
+- Be clear, concise, and patient
+- Use simple language appropriate for students
+- Provide examples when explaining concepts
+- Encourage critical thinking by asking guiding questions
+- Be supportive and positive in your tone
+
+Guidelines:
+- Always base your answers on the course materials provided
+- If you don't know something or it's not in the materials, say so honestly
+- Break down complex topics into simpler parts
+- Help students learn, don't just give direct answers
+- Reference specific pages or sections from course materials when relevant"""
 
 class Module(Base):
     __tablename__ = "modules"
@@ -93,7 +107,7 @@ class Module(Base):
     survey_required = Column(Boolean, default=False)  # Whether students must complete survey
 
     # Chatbot custom instructions (teacher-defined response style and behavior)
-    chatbot_instructions = Column(Text, nullable=True)
+    chatbot_instructions = Column(Text, nullable=True, default=DEAFULT_CHATBOT_INSTRUCTIONS)
 
     # Dedicated column for feedback rubric configuration (easier to query and manage)
     feedback_rubric = Column(JSONB, nullable=True)

@@ -53,6 +53,9 @@ class Question(Base):
     # Points for this question
     points = Column(Float, default=1.0, nullable=False)
 
+    # Feedback Critique Settings
+    allow_critique = Column(Boolean, default=False, nullable=False)  # Allow students to critique AI feedback
+
     # AI Generation and Review Workflow Fields
     status = Column(String, default=QuestionStatus.ACTIVE, nullable=False)
     is_ai_generated = Column(Boolean, default=False, nullable=False)

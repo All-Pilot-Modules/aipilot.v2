@@ -13,27 +13,70 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { CardSkeleton, Skeleton } from '@/components/SkeletonLoader';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ModuleConsentPage() {
   const params = useParams();
   const router = useRouter();
-  const moduleId = params?.moduleId;
+  const { user } = useAuth();
+  const moduleIdOrName = params?.moduleId;
 
   const [module, setModule] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Helper to check if a string is a valid UUID
+  const isUUID = (str) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
   const loadModule = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get(`/api/modules/${moduleId}`);
-      setModule(data);
+
+      let moduleData;
+
+      // If moduleIdOrName is a UUID, fetch directly
+      if (isUUID(moduleIdOrName)) {
+        moduleData = await apiClient.get(`/api/modules/${moduleIdOrName}`);
+      } else {
+        // Otherwise, treat it as a module name and fetch by teacher
+        if (!user?.id && !user?.sub) {
+          setError('User not authenticated. Please log in.');
+          setLoading(false);
+          return;
+        }
+
+        const userId = user.id || user.sub;
+        const response = await apiClient.get(`/api/modules?teacher_id=${userId}`);
+        const modules = response?.data || response || [];
+
+        const foundModule = modules.find(m => m.name === moduleIdOrName);
+
+        if (!foundModule) {
+          setError(`Module "${moduleIdOrName}" not found. Please check the module name.`);
+          setLoading(false);
+          return;
+        }
+
+        if (!foundModule.id) {
+          console.error('Module found but has no ID:', foundModule);
+          setError('Module data is invalid (missing ID).');
+          setLoading(false);
+          return;
+        }
+
+        moduleData = foundModule;
+      }
+
+      setModule(moduleData);
 
       // Add module name to URL for sidebar navigation
-      if (data?.name) {
+      if (moduleData?.name) {
         const url = new URL(window.location.href);
         if (!url.searchParams.get('module')) {
-          url.searchParams.set('module', data.name);
+          url.searchParams.set('module', moduleData.name);
           window.history.replaceState({}, '', url);
         }
       }
@@ -56,11 +99,24 @@ export default function ModuleConsentPage() {
   };
 
   useEffect(() => {
-    if (moduleId) {
-      loadModule();
+    if (moduleIdOrName) {
+      // If it's a UUID, we can load directly. If it's a name, we need user data first
+      if (isUUID(moduleIdOrName)) {
+        loadModule();
+      } else if (user) {
+        // Module name provided, user is loaded
+        loadModule();
+      } else {
+        // Module name provided but user not loaded yet - keep waiting
+        // Loading state will persist until user is loaded
+      }
+    } else {
+      // No module ID or name provided
+      setError('No module specified in URL.');
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleId]);
+  }, [moduleIdOrName, user]);
 
   const handleUpdate = (updatedModule) => {
     setModule(updatedModule);
@@ -95,7 +151,8 @@ export default function ModuleConsentPage() {
     );
   }
 
-  if (error || !module) {
+  // Validate that module has a valid UUID before rendering
+  if (error || !module || !module.id || !isUUID(module.id)) {
     return (
       <SidebarProvider>
         <AppSidebar />
@@ -105,9 +162,11 @@ export default function ModuleConsentPage() {
             <Card className="max-w-md">
               <CardContent className="pt-6">
                 <div className="text-center">
-                  <p className="text-red-600 mb-4">{error || 'Module not found'}</p>
+                  <p className="text-red-600 mb-4">
+                    {error || (!module ? 'Module not found' : 'Invalid module ID')}
+                  </p>
                   <Button asChild>
-                    <Link href={`/dashboard?module=${module?.name || ''}`}>Back to Dashboard</Link>
+                    <Link href="/mymodules">Back to My Modules</Link>
                   </Button>
                 </div>
               </CardContent>
@@ -146,7 +205,7 @@ export default function ModuleConsentPage() {
 
         {/* Consent Form Editor */}
         <ConsentFormEditor
-          moduleId={moduleId}
+          moduleId={module.id}
           initialConsentText={module.consent_form_text}
           initialConsentRequired={module.consent_required}
           onUpdate={handleUpdate}

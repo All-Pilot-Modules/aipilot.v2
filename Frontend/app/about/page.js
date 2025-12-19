@@ -227,5 +227,7 @@ export default function AboutPage() {
         </div>
       </footer>
     </div>
+
+    
   );
 }

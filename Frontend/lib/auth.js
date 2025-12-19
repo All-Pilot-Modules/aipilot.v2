@@ -2,14 +2,37 @@ import { jwtDecode } from 'jwt-decode';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// Helper function to add timeout to fetch requests
-const fetchWithTimeout = (url, options = {}, timeout = 10000) => {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Request timeout - please check your connection')), timeout)
-    )
-  ]);
+// Helper function to add timeout to fetch requests with proper abort handling
+const fetchWithTimeout = async (url, options = {}, timeout = 10000) => {
+  // Ensure we're in a browser environment
+  if (typeof window === 'undefined') {
+    throw new Error('fetch can only be used in browser environment');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // Handle different error types
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout - please check your connection');
+    }
+
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      throw new Error('Cannot connect to server. Please ensure the backend is running.');
+    }
+
+    throw error;
+  }
 };
 
 // Auth functions
@@ -58,8 +81,22 @@ export const auth = {
       }
 
       // Store user data in sessionStorage (not sensitive token data)
-      if (data.user) {
-        sessionStorage.setItem('user', JSON.stringify(data.user));
+      // If no user object in response, decode from token
+      let userData = data.user;
+      if (!userData && data.access_token) {
+        try {
+          const decoded = jwtDecode(data.access_token);
+          userData = decoded;
+        } catch (e) {
+          console.error('Failed to decode token:', e);
+        }
+      }
+
+      if (userData) {
+        console.log('💾 Storing user in sessionStorage:', userData);
+        sessionStorage.setItem('user', JSON.stringify(userData));
+        // Also return userData in the response
+        data.user = userData;
       }
 
       return data;

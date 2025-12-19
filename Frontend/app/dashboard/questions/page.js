@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -52,7 +53,15 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
   const { user, loading, isAuthenticated } = useAuth();
   const searchParams = useSearchParams();
   const moduleName = searchParams.get('module');
-  
+
+  console.log('🟢 QuestionsPageContent mounted/rendered', {
+    moduleName,
+    isAuthenticated,
+    userId: user?.id || user?.sub,
+    userObject: user,
+    loading
+  });
+
   const [questions, setQuestions] = useState([]);
   const [currentModule, setCurrentModule] = useState(null);
   const [moduleDocument, setModuleDocument] = useState(null);
@@ -80,6 +89,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
     bloom_taxonomy: "",
     image_url: "",
     has_text_input: false,
+    allow_critique: false, // Allow students to critique AI feedback (disabled by default)
     // New question types fields
     extended_config: null,
     // Fill-in-the-blank specific
@@ -93,28 +103,69 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
   });
 
   useEffect(() => {
-    if (isAuthenticated && user && moduleName) {
-      fetchModuleAndQuestions();
+    // Wait for auth to finish loading before fetching
+    if (loading) {
+      console.log('⏳ Auth still loading, waiting...');
+      return;
     }
+
+    if (!isAuthenticated) {
+      console.log('❌ Not authenticated');
+      setLoadingQuestions(false);
+      return;
+    }
+
+    const userId = user?.id || user?.sub;
+    if (!user || !userId) {
+      console.log('❌ User not loaded yet', { user, userId, loading });
+      setLoadingQuestions(false);
+      return;
+    }
+
+    if (!moduleName) {
+      console.log('❌ No module name in URL');
+      setLoadingQuestions(false);
+      return;
+    }
+
+    console.log('✅ All conditions met, fetching module and questions');
+    fetchModuleAndQuestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user, moduleName]);
+  }, [isAuthenticated, user, moduleName, loading]);
 
   const fetchModuleAndQuestions = async () => {
     setLoadingQuestions(true);
     try {
       // Get module info
-      console.log('Fetching modules for teacher:', user.id);
-      const moduleData = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+      const userId = user?.id || user?.sub;
+      console.log('Fetching modules for teacher:', userId, 'Full user object:', user);
+
+      if (!user || !userId) {
+        console.error('❌ User is not loaded! Cannot fetch modules.', { user, isAuthenticated, loading });
+        setLoadingQuestions(false);
+        return;
+      }
+
+      const moduleData = await apiClient.get(`/api/modules?teacher_id=${userId}`);
       console.log('Module data received:', moduleData);
+      console.log('Available module names:', moduleData.map(m => m.name));
+      console.log('Looking for module with name:', moduleName);
+
       const foundModule = moduleData.find(m => m.name === moduleName);
       console.log('Found module:', foundModule, 'for name:', moduleName);
+
+      if (!foundModule) {
+        console.error('❌ Module not found!');
+        console.error('Available modules:', moduleData.map(m => ({ id: m.id, name: m.name })));
+        console.error('Searched for:', moduleName);
+      }
 
       if (foundModule) {
         console.log('Setting current module:', foundModule);
         setCurrentModule(foundModule);
-        
+
         // Get documents for this module to use as question container
-        const documentsData = await apiClient.get(`/api/documents?teacher_id=${user.id}&module_id=${foundModule.id}`);
+        const documentsData = await apiClient.get(`/api/documents?teacher_id=${userId}&module_id=${foundModule.id}`);
         
         // Use the first document as container, or create a placeholder if none exist
         if (documentsData && documentsData.length > 0) {
@@ -251,6 +302,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
       bloom_taxonomy: "",
       image_url: "",
       has_text_input: false,
+      allow_critique: false,
       extended_config: null,
       blanks: [],
       correct_option_ids: [],
@@ -261,8 +313,43 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
   };
 
   const handleCreate = async (e) => {
+    console.log('🔵 handleCreate called!', { e, questionForm, currentModule, moduleName });
     e.preventDefault();
-    if (!questionForm.text || !currentModule) return;
+
+    // Better validation with user feedback
+    if (!questionForm.text) {
+      alert('Please enter a question text');
+      console.error('Validation failed: questionForm.text is empty');
+      return;
+    }
+
+    if (!currentModule) {
+      alert('Module not loaded. Please refresh the page and try again.');
+      console.error('Validation failed: currentModule is null', { moduleName });
+      return;
+    }
+
+    // Validate question type specific requirements
+    if (questionForm.type === "mcq" || questionForm.type === "mcq_multiple") {
+      const filledOptions = questionForm.options.filter(opt => opt.trim()).length;
+      if (filledOptions < 2) {
+        alert('Please provide at least 2 options for the MCQ question');
+        console.error('Validation failed: MCQ question has less than 2 options', { filledOptions });
+        return;
+      }
+    }
+
+    if (questionForm.type === "mcq" && !questionForm.correct_option_id) {
+      alert('Please select a correct answer for the MCQ question');
+      console.error('Validation failed: MCQ question missing correct_option_id');
+      return;
+    }
+
+    if (questionForm.type === "mcq_multiple" && (!questionForm.correct_option_ids || questionForm.correct_option_ids.length === 0)) {
+      alert('Please select at least one correct answer for the multiple choice question');
+      console.error('Validation failed: MCQ multiple question missing correct_option_ids');
+      return;
+    }
 
     try {
       // Use existing document_id if available, or null if creating standalone questions
@@ -325,6 +412,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
         bloom_taxonomy: questionForm.bloom_taxonomy || null,
         image_url: questionForm.image_url || null,
         has_text_input: questionForm.has_text_input,
+        allow_critique: questionForm.allow_critique === true, // Default to false
         status: 'active',
         is_ai_generated: false
       };
@@ -416,7 +504,8 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
         learning_outcome: questionForm.learning_outcome || null,
         bloom_taxonomy: questionForm.bloom_taxonomy || null,
         image_url: questionForm.image_url || null,
-        has_text_input: questionForm.has_text_input
+        has_text_input: questionForm.has_text_input,
+        allow_critique: questionForm.allow_critique === true // Default to false
       };
 
       const response = await apiClient.put(`/api/questions/${selectedQuestion.id}`, payload);
@@ -513,6 +602,7 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
       bloom_taxonomy: question.bloom_taxonomy || "",
       image_url: question.image_url || "",
       has_text_input: question.has_text_input || false,
+      allow_critique: question.allow_critique !== undefined ? question.allow_critique : false, // Default to false if not set
       // New question types fields
       extended_config: question.extended_config || null,
       blanks: blanks,
@@ -1297,6 +1387,22 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
                         <p className="text-xs text-muted-foreground mt-1">
                           Points awarded for correct answer
                         </p>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="allow_critique" className="text-base font-medium">
+                            Allow Feedback Critique
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Let students rate and comment on AI feedback for this question
+                          </p>
+                        </div>
+                        <Switch
+                          id="allow_critique"
+                          checked={questionForm.allow_critique}
+                          onCheckedChange={(checked) => setQuestionForm({...questionForm, allow_critique: checked})}
+                        />
                       </div>
 
                       <div>
@@ -2221,6 +2327,22 @@ const QuestionsPageContent = memo(function QuestionsPageContent() {
                   <p className="text-xs text-muted-foreground mt-1">
                     Points awarded for correct answer
                   </p>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="edit-allow_critique" className="text-base font-medium">
+                      Allow Feedback Critique
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Let students rate and comment on AI feedback for this question
+                    </p>
+                  </div>
+                  <Switch
+                    id="edit-allow_critique"
+                    checked={questionForm.allow_critique}
+                    onCheckedChange={(checked) => setQuestionForm({...questionForm, allow_critique: checked})}
+                  />
                 </div>
 
                 <div>

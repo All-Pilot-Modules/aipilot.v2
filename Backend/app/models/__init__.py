@@ -17,6 +17,7 @@ from app.models.survey_response import SurveyResponse  # ✅ NEW: Student survey
 from app.models.chat_conversation import ChatConversation  # ✅ NEW: Chat conversations
 from app.models.chat_message import ChatMessage  # ✅ NEW: Chat messages
 from app.models.teacher_grade import TeacherGrade  # ✅ NEW: Teacher manual grades
+from app.models.feedback_critique import FeedbackCritique  # ✅ NEW: Student feedback critiques
 # from app.models.autosave import Autosave
 # from app.models.attempt_summary import AttemptSummary
 # from app.models.audio_explanation import AudioExplanation

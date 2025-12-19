@@ -57,6 +57,9 @@ class QuestionBase(BaseModel):
     image_url: Optional[str] = Field(None, description="URL to image if the question is visual")
     has_text_input: Optional[bool] = Field(False, description="True if it includes explanation input")
 
+    # Feedback Critique Settings
+    allow_critique: Optional[bool] = Field(False, description="Allow students to critique AI feedback for this question")
+
     # AI Generation and Review Workflow Fields
     status: Optional[str] = Field("active", description="Question status: unreviewed, active, or archived")
     is_ai_generated: Optional[bool] = Field(False, description="Whether this question was AI-generated")
@@ -123,6 +126,7 @@ class QuestionUpdate(BaseModel):
     bloom_taxonomy: Optional[str] = None
     image_url: Optional[str] = None
     has_text_input: Optional[bool] = None
+    allow_critique: Optional[bool] = None
     document_id: Optional[UUID] = None
     status: Optional[str] = None
 

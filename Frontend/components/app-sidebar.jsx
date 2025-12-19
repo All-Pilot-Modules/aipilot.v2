@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   Sidebar,
@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, Settings, User, ChevronDown, LayoutDashboard, FolderOpen, HelpCircle, Users, BookOpen, ClipboardCheck, Sparkles, Shield, Brain, FileText, BarChart3, LifeBuoy } from "lucide-react";
+import { LogOut, Settings, User, ChevronDown, LayoutDashboard, FolderOpen, HelpCircle, Users, BookOpen, ClipboardCheck, Sparkles, Shield, Brain, FileText, BarChart3, LifeBuoy, MessageSquare } from "lucide-react";
 import { apiClient } from "@/lib/auth";
 
 export function AppSidebar(props) {
@@ -35,7 +35,8 @@ export function AppSidebar(props) {
   const router = useRouter();
   const pathname = usePathname();
   // Check for 'module' param first, fall back to 'module_name' (used in review page)
-  const module = searchParams?.get('module') || searchParams?.get('module_name');
+  // Use empty string as default to ensure consistent rendering
+  const module = searchParams?.get('module') || searchParams?.get('module_name') || '';
 
   // Debug logging
   useEffect(() => {
@@ -53,18 +54,20 @@ export function AppSidebar(props) {
   const [currentModuleId, setCurrentModuleId] = useState(null);
 
   const fetchModules = useCallback(async () => {
-    if (!user?.id) return;
+    const userId = user?.id || user?.sub;
+    if (!userId) return;
 
     try {
       setLoadingModules(true);
-      const data = await apiClient.get(`/api/modules?teacher_id=${user.id}`);
+      const data = await apiClient.get(`/api/modules?teacher_id=${userId}`);
       setModules(data || []);
     } catch (error) {
       console.error('Failed to fetch modules:', error);
+      setModules([]);
     } finally {
       setLoadingModules(false);
     }
-  }, [user?.id]);
+  }, [user?.id, user?.sub]);
 
   // Fetch user's modules
   useEffect(() => {
@@ -93,7 +96,8 @@ export function AppSidebar(props) {
     return pathname.startsWith(path);
   };
 
-  const navMain = [
+  // Memoize navMain to prevent hydration issues
+  const navMain = useMemo(() => [
     {
       title: "Dashboard",
       url: `/dashboard?module=${module}`,
@@ -115,11 +119,16 @@ export function AppSidebar(props) {
       icon: ClipboardCheck,
     },
     {
+      title: "Feedback Critiques",
+      url: `/dashboard/feedback-critiques?module=${module}`,
+      icon: MessageSquare,
+    },
+    {
       title: "Students",
       url: `/dashboard/students?module=${module}`,
       icon: Users,
     },
-  ];
+  ], [module]);
 
   const bottomNav = [
     {
@@ -287,8 +296,9 @@ export function AppSidebar(props) {
                   isActive={pathname.includes('/consent')}
                   tooltip="Consent Form"
                   className="h-9 px-2 rounded-lg transition-all duration-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 data-[active=true]:bg-emerald-700 data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
+                  disabled={!currentModuleId}
                 >
-                  <Link href={`/module/${currentModuleId || module}/consent`} onClick={(e) => e.stopPropagation()}>
+                  <Link href={currentModuleId ? `/module/${currentModuleId}/consent?module=${module}` : '#'} onClick={(e) => { if (!currentModuleId) e.preventDefault(); e.stopPropagation(); }}>
                     <Shield className="w-5 h-5" />
                     <span className="font-medium">Consent Form</span>
                   </Link>
