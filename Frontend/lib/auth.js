@@ -286,6 +286,108 @@ export const auth = {
       this.logout();
       return null;
     }
+  },
+
+  // Request password reset
+  async requestPasswordReset(email) {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/password-reset/request`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        },
+        10000
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to send reset email');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Verify reset code
+  async verifyResetCode(email, code) {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/password-reset/verify-code`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, code }),
+        },
+        10000
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Invalid code');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Verify reset token (magic link)
+  async verifyResetToken(token) {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/password-reset/verify-token?token=${token}`,
+        {},
+        10000
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Invalid reset link');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Reset password with code
+  async resetPassword(email, code, newPassword) {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/auth/password-reset/confirm`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            code,
+            new_password: newPassword,
+          }),
+        },
+        10000
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to reset password');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
   }
 };
 

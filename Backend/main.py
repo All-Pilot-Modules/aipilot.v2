@@ -25,6 +25,7 @@ from app.api.routes.student_answers import router as student_answers_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.survey import router as survey_router
 from app.api.routes.export import router as export_router
+from app.api.routes.feedback import router as feedback_router
 
 from app.core.config import add_cors
 from app.database import engine
@@ -63,6 +64,7 @@ app.include_router(student_answers_router, prefix="/api/student-answers", tags=[
 app.include_router(chat_router, prefix="/api", tags=["Chat"])
 app.include_router(survey_router, prefix="/api", tags=["Survey"])
 app.include_router(export_router, prefix="/api", tags=["Export"])
+app.include_router(feedback_router, prefix="/api/ai-feedback", tags=["AI Feedback"])
 
 # 🚀 Startup event to create all tables and import all models
 @app.on_event("startup")

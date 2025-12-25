@@ -40,3 +40,16 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+
+# Password Reset schemas
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetVerify(BaseModel):
+    email: str
+    code: str
+
+class PasswordResetConfirm(BaseModel):
+    email: str
+    code: str
+    new_password: str

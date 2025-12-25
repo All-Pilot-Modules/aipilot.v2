@@ -2,7 +2,15 @@ from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
-from app.schemas.user import UserLogin, Token, UserCreate, UserOut
+from app.schemas.user import (
+    UserLogin,
+    Token,
+    UserCreate,
+    UserOut,
+    PasswordResetRequest,
+    PasswordResetVerify,
+    PasswordResetConfirm
+)
 from app.core.auth import (
     verify_password,
     get_password_hash,
@@ -16,10 +24,13 @@ from app.core.auth import (
 from app.core.email import (
     send_verification_email,
     send_welcome_email,
+    send_reset_password_email,
     generate_verification_code,
     generate_verification_token,
     get_verification_code_expiry,
-    get_verification_token_expiry
+    get_verification_token_expiry,
+    get_reset_code_expiry,
+    get_reset_token_expiry
 )
 from app.database import get_db
 from app.models.user import User
@@ -352,4 +363,163 @@ def resend_verification_email(email: str, db: Session = Depends(get_db)):
     return {
         "message": "Verification email sent successfully",
         "email": user.email
+    }
+
+
+@router.post("/password-reset/request")
+def request_password_reset(request: PasswordResetRequest, db: Session = Depends(get_db)):
+    """
+    Request password reset by email. Sends reset code and magic link.
+    Returns success even if email doesn't exist (security best practice).
+    """
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email).first()
+
+    # Always return success (don't reveal if email exists)
+    if not user:
+        return {
+            "message": "If an account exists with this email, you will receive a password reset link.",
+            "email": request.email
+        }
+
+    # Generate reset code and token
+    reset_code = generate_verification_code()  # Reuse existing function (6 digits)
+    reset_token = generate_verification_token()  # Reuse existing function
+
+    # Update user with reset data
+    user.reset_code = reset_code
+    user.reset_code_expires = get_reset_code_expiry()  # 15 minutes
+    user.reset_token = reset_token
+    user.reset_token_expires = get_reset_token_expiry()  # 15 minutes
+
+    db.commit()
+
+    # Send reset email
+    send_reset_password_email(
+        to_email=user.email,
+        username=user.username or user.id,
+        code=reset_code,
+        token=reset_token
+    )
+
+    return {
+        "message": "If an account exists with this email, you will receive a password reset link.",
+        "email": request.email
+    }
+
+
+@router.post("/password-reset/verify-code")
+def verify_reset_code(request: PasswordResetVerify, db: Session = Depends(get_db)):
+    """
+    Verify that the reset code is valid without resetting password.
+    This allows the frontend to show the new password form.
+    """
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check if code matches
+    if user.reset_code != request.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset code"
+        )
+
+    # Check if code has expired
+    if user.reset_code_expires and user.reset_code_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset code has expired. Please request a new one."
+        )
+
+    return {
+        "message": "Code verified successfully",
+        "email": user.email
+    }
+
+
+@router.post("/password-reset/confirm")
+def reset_password_with_code(request: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """
+    Reset password using verified code and new password.
+    """
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check if code matches
+    if user.reset_code != request.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset code"
+        )
+
+    # Check if code has expired
+    if user.reset_code_expires and user.reset_code_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset code has expired. Please request a new one."
+        )
+
+    # Validate new password
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long"
+        )
+
+    # Update password
+    user.hashed_password = get_password_hash(request.new_password)
+
+    # Clear reset fields
+    user.reset_code = None
+    user.reset_code_expires = None
+    user.reset_token = None
+    user.reset_token_expires = None
+
+    db.commit()
+
+    return {
+        "message": "Password reset successfully. You can now login with your new password.",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username
+        }
+    }
+
+
+@router.get("/password-reset/verify-token")
+def verify_reset_token(token: str, db: Session = Depends(get_db)):
+    """
+    Verify reset token from magic link.
+    Returns user email if valid, for the frontend to show password reset form.
+    """
+    user = db.query(User).filter(User.reset_token == token).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid reset link"
+        )
+
+    # Check if token has expired
+    if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link has expired. Please request a new one."
+        )
+
+    return {
+        "message": "Reset link is valid",
+        "email": user.email,
+        "code": user.reset_code  # Return code so frontend can use it for password reset
     }

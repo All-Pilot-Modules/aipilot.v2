@@ -19,6 +19,12 @@ class User(Base):
     verification_token = Column(String, nullable=True)
     verification_token_expires = Column(TIMESTAMP, nullable=True)
 
+    # Password reset fields
+    reset_code = Column(String, nullable=True)
+    reset_code_expires = Column(TIMESTAMP, nullable=True)
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(TIMESTAMP, nullable=True)
+
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = Column(Boolean, default=True)

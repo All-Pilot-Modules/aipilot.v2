@@ -262,23 +262,31 @@ def get_module_documents(
 @router.get("/modules/{module_id}/questions", response_model=List[QuestionOut])
 def get_module_questions(
     module_id: UUID,
+    include_all: bool = Query(False, description="Include all questions (for teachers viewing critiques)"),
     db: Session = Depends(get_db)
 ):
     """
     Get all ACTIVE questions for a module (this is the assignment).
     Students only see questions that have been approved by teachers.
+    Use include_all=true to fetch all questions including inactive ones (for teacher views).
     """
     from app.crud.question import get_questions_by_status
-    from app.models.question import QuestionStatus
+    from app.models.question import QuestionStatus, Question
 
     module = get_module_by_id(db, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    # SECURITY: Only return active questions to students
-    questions = get_questions_by_status(db, module_id, QuestionStatus.ACTIVE)
-    print(f"🔒 Student endpoint: Returning {len(questions)} active questions for module {module_id}")
-    return questions
+    if include_all:
+        # Return all questions (for teachers viewing feedback critiques)
+        questions = db.query(Question).filter(Question.module_id == module_id).all()
+        print(f"📚 Teacher endpoint: Returning {len(questions)} total questions for module {module_id}")
+        return questions
+    else:
+        # SECURITY: Only return active questions to students
+        questions = get_questions_by_status(db, module_id, QuestionStatus.ACTIVE)
+        print(f"🔒 Student endpoint: Returning {len(questions)} active questions for module {module_id}")
+        return questions
 
 # ❓ Get all questions for a document (assignment)
 @router.get("/documents/{document_id}/questions", response_model=List[QuestionOut])
@@ -1157,14 +1165,15 @@ def get_module_feedback_critiques(
     db: Session = Depends(get_db)
 ):
     """
-    Get all feedback critiques for a module.
-    Useful for teachers to see what students think about AI feedback quality.
+    Get all feedback critiques for a module with complete context.
+    Returns critiques with embedded feedback, student answer, and question data.
     """
     from app.models.feedback_critique import FeedbackCritique
     from app.models.ai_feedback import AIFeedback
     from app.models.student_answer import StudentAnswer
+    from app.models.question import Question
 
-    # Get all feedback for this module
+    # Get all feedback for this module with joins
     feedbacks = db.query(AIFeedback).join(StudentAnswer).filter(
         StudentAnswer.module_id == module_id
     ).all()
@@ -1201,6 +1210,72 @@ def get_module_feedback_critiques(
         if critique.feedback_type:
             feedback_types[critique.feedback_type] = feedback_types.get(critique.feedback_type, 0) + 1
 
+    # Build critiques with full context (feedback, answer, question)
+    critiques_with_context = []
+    for c in critiques:
+        # Get the feedback
+        feedback = db.query(AIFeedback).filter(AIFeedback.id == c.feedback_id).first()
+        if not feedback:
+            continue
+
+        # Get the student answer
+        answer = db.query(StudentAnswer).filter(StudentAnswer.id == feedback.answer_id).first()
+        if not answer:
+            continue
+
+        # Get the question
+        question = db.query(Question).filter(Question.id == answer.question_id).first()
+
+        if not question:
+            logger.warning(f"⚠️ Question not found for answer {answer.id}, question_id: {answer.question_id}")
+
+        # Build feedback data
+        feedback_data = feedback.feedback_data or {}
+
+        critique_data = {
+            "id": str(c.id),
+            "feedback_id": str(c.feedback_id),
+            "student_id": c.student_id,
+            "rating": c.rating,
+            "comment": c.comment,
+            "feedback_type": c.feedback_type,
+            "created_at": c.created_at.isoformat(),
+            "updated_at": c.updated_at.isoformat(),
+            # Embedded feedback details
+            "feedback": {
+                "id": str(feedback.id),
+                "feedback_text": feedback_data.get("explanation", "") or feedback_data.get("feedback", ""),
+                "is_correct": feedback.is_correct,
+                "score": feedback.score,
+                "points_earned": feedback.points_earned,
+                "points_possible": feedback.points_possible
+            },
+            # Embedded student answer
+            "answer": {
+                "id": str(answer.id),
+                "answer": answer.answer,
+                "attempt": answer.attempt,
+                "submitted_at": answer.submitted_at.isoformat()
+            },
+            # Embedded question
+            "question": {
+                "id": str(question.id),
+                "text": question.text,
+                "type": question.type,
+                "options": question.options,
+                "points": question.points
+            } if question else {
+                "id": str(answer.question_id),
+                "text": "Question not found (may have been deleted)",
+                "type": "unknown",
+                "options": None,
+                "points": 0
+            }
+        }
+
+        logger.info(f"📦 Critique {c.id}: question={'found' if question else 'NOT FOUND'}, answer={answer.id}")
+        critiques_with_context.append(critique_data)
+
     return {
         "module_id": str(module_id),
         "total_critiques": total_critiques,
@@ -1209,17 +1284,5 @@ def get_module_feedback_critiques(
         "average_rating": round(average_rating, 2),
         "rating_distribution": rating_distribution,
         "feedback_types": feedback_types,
-        "critiques": [
-            {
-                "id": str(c.id),
-                "feedback_id": str(c.feedback_id),
-                "student_id": c.student_id,
-                "rating": c.rating,
-                "comment": c.comment,
-                "feedback_type": c.feedback_type,
-                "created_at": c.created_at.isoformat(),
-                "updated_at": c.updated_at.isoformat()
-            }
-            for c in critiques
-        ]
+        "critiques": critiques_with_context
     }

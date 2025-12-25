@@ -100,12 +100,48 @@ export const AuthProvider = ({ children }) => {
     }));
   };
 
+  const requestPasswordReset = async (email) => {
+    try {
+      return await auth.requestPasswordReset(email);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const verifyResetCode = async (email, code) => {
+    try {
+      return await auth.verifyResetCode(email, code);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const verifyResetToken = async (token) => {
+    try {
+      return await auth.verifyResetToken(token);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const resetPassword = async (email, code, newPassword) => {
+    try {
+      return await auth.resetPassword(email, code, newPassword);
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const value = {
     user,
     login,
     register,
     logout,
     updateUser,
+    requestPasswordReset,
+    verifyResetCode,
+    verifyResetToken,
+    resetPassword,
     loading,
     isAuthenticated,
   };

@@ -34,9 +34,6 @@ export default function FeedbackCritiquesPage() {
 
   const [currentModule, setCurrentModule] = useState(null);
   const [critiquesData, setCritiquesData] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [studentAnswers, setStudentAnswers] = useState({});
-  const [aiFeedbacks, setAiFeedbacks] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,46 +63,12 @@ export default function FeedbackCritiquesPage() {
 
         setCurrentModule(foundModule);
 
-        // Fetch questions
-        const questionsResponse = await apiClient.get(`/api/student/modules/${foundModule.id}/questions`);
-        const questionsData = questionsResponse?.data || questionsResponse;
-        setQuestions(questionsData);
-
-        // Fetch feedback critiques data
+        // Fetch feedback critiques data (now includes embedded feedback, answer, and question)
         const critiquesResponse = await apiClient.get(
           `/api/student/modules/${foundModule.id}/feedback-critiques`
         );
         const data = critiquesResponse?.data || critiquesResponse;
         setCritiquesData(data);
-
-        // Fetch student answers and AI feedback for each critique
-        const answersMap = {};
-        const feedbacksMap = {};
-
-        for (const critique of data.critiques || []) {
-          // Fetch AI feedback details
-          try {
-            const feedbackResponse = await apiClient.get(`/api/ai-feedback/${critique.feedback_id}`);
-            const feedbackData = feedbackResponse?.data || feedbackResponse;
-            feedbacksMap[critique.feedback_id] = feedbackData;
-
-            // Fetch student answer if we have question_id
-            if (feedbackData.question_id && !answersMap[feedbackData.question_id]) {
-              const answersResponse = await apiClient.get(
-                `/api/student-answers?question_id=${feedbackData.question_id}&student_id=${critique.student_id}`
-              );
-              const answersData = answersResponse?.data || answersResponse;
-              if (answersData && answersData.length > 0) {
-                answersMap[`${critique.student_id}-${feedbackData.question_id}`] = answersData[0];
-              }
-            }
-          } catch (err) {
-            console.error('Error fetching feedback/answer:', err);
-          }
-        }
-
-        setAiFeedbacks(feedbacksMap);
-        setStudentAnswers(answersMap);
 
       } catch (err) {
         console.error('Error fetching critiques:', err);
@@ -195,19 +158,81 @@ export default function FeedbackCritiquesPage() {
     return labels[category] || category;
   };
 
-  const getQuestionText = (feedbackId) => {
-    const feedback = aiFeedbacks[feedbackId];
-    if (!feedback) return "Loading...";
+  const formatAnswer = (answer, options = null) => {
+    if (!answer) return null;
 
-    const question = questions.find(q => q.id === feedback.question_id);
-    return question?.text || "Question not found";
-  };
+    // Normalize options to a dictionary format {"A": "Apple", "B": "Ball"}
+    let optionsDict = {};
 
-  const getStudentAnswer = (studentId, feedbackId) => {
-    const feedback = aiFeedbacks[feedbackId];
-    if (!feedback) return null;
+    if (options) {
+      if (Array.isArray(options)) {
+        // Convert array format to dict: [{id: "A", text: "Apple"}] => {"A": "Apple"}
+        options.forEach(opt => {
+          if (opt?.id && opt?.text) {
+            optionsDict[opt.id] = opt.text;
+          }
+        });
+      } else if (typeof options === 'object') {
+        // Already in dict format {"A": "Apple"}
+        optionsDict = options;
+      }
+    }
 
-    return studentAnswers[`${studentId}-${feedback.question_id}`];
+    // Handle object answers (e.g., {selected_option_id: "A"})
+    if (typeof answer === 'object' && !Array.isArray(answer)) {
+      // Handle text_response objects (e.g., {text_response: "two"})
+      if (answer.text_response !== undefined) {
+        return answer.text_response;
+      }
+
+      // Handle selected_option_id objects
+      if (answer.selected_option_id !== undefined) {
+        const optionId = answer.selected_option_id;
+
+        if (optionsDict[optionId]) {
+          return `${optionId}: ${optionsDict[optionId]}`;
+        }
+        return `Option ${optionId}`;
+      }
+
+      // Handle selected_options (multiple choice multiple answer)
+      if (answer.selected_options && Array.isArray(answer.selected_options)) {
+        return answer.selected_options
+          .map(optId => optionsDict[optId] ? `${optId}: ${optionsDict[optId]}` : `Option ${optId}`)
+          .join(', ');
+      }
+
+      // Handle blanks (fill in the blank)
+      if (answer.blanks && typeof answer.blanks === 'object') {
+        return Object.entries(answer.blanks)
+          .map(([key, value]) => `${key}: "${value}"`)
+          .join(', ');
+      }
+
+      // Handle sub_answers (multi-part questions)
+      if (answer.sub_answers && typeof answer.sub_answers === 'object') {
+        return Object.entries(answer.sub_answers)
+          .map(([key, value]) => `Part ${key}: ${value}`)
+          .join(', ');
+      }
+
+      // Generic object formatting (fallback)
+      return Object.entries(answer)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+    }
+
+    // Handle arrays
+    if (Array.isArray(answer)) {
+      return answer.join(', ');
+    }
+
+    // Handle string option IDs (e.g., just "A")
+    if (typeof answer === 'string' && optionsDict[answer]) {
+      return `${answer}: ${optionsDict[answer]}`;
+    }
+
+    return String(answer);
   };
 
   if (authLoading || loading) {
@@ -382,9 +407,6 @@ export default function FeedbackCritiquesPage() {
                     {expandedStudents.has(student.student_id) && (
                       <div className="border-t border-gray-200 dark:border-gray-700 p-4 space-y-4 bg-gray-50 dark:bg-gray-800/30">
                         {student.critiques.map((critique, index) => {
-                          const feedback = aiFeedbacks[critique.feedback_id];
-                          const answer = getStudentAnswer(student.student_id, critique.feedback_id);
-
                           return (
                             <div key={critique.id} className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                               {/* Question */}
@@ -393,29 +415,45 @@ export default function FeedbackCritiquesPage() {
                                   <FileText className="w-4 h-4 text-blue-600 mt-1 flex-shrink-0" />
                                   <div className="flex-1">
                                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Question:</p>
-                                    <p className="text-sm text-gray-900 dark:text-white">{getQuestionText(critique.feedback_id)}</p>
+                                    <p className="text-sm text-gray-900 dark:text-white mb-2">
+                                      {critique.question?.text || "Question not found"}
+                                    </p>
+                                    {critique.question?.options && Object.keys(critique.question.options).length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Options:</p>
+                                        <div className="space-y-1">
+                                          {Object.entries(critique.question.options).map(([key, value]) => (
+                                            <div key={key} className="text-xs text-gray-700 dark:text-gray-300">
+                                              <span className="font-medium">{key}:</span> {value}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
 
                               {/* Student Answer */}
-                              {answer && (
+                              {critique.answer && (
                                 <div className="mb-3 pl-6">
                                   <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Student Answer:</p>
                                   <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded border border-blue-200 dark:border-blue-800">
                                     <p className="text-sm text-gray-800 dark:text-gray-200">
-                                      {typeof answer.answer === 'string' ? answer.answer : answer.answer?.text_response || 'N/A'}
+                                      {formatAnswer(critique.answer.answer, critique.question?.options) || 'No answer provided'}
                                     </p>
                                   </div>
                                 </div>
                               )}
 
                               {/* AI Feedback */}
-                              {feedback && (
+                              {critique.feedback && (
                                 <div className="mb-3 pl-6">
                                   <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">AI Feedback:</p>
                                   <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded border border-purple-200 dark:border-purple-800">
-                                    <p className="text-sm text-gray-800 dark:text-gray-200">{feedback.feedback_text || 'No feedback text'}</p>
+                                    <p className="text-sm text-gray-800 dark:text-gray-200">
+                                      {critique.feedback.feedback_text || 'No feedback text'}
+                                    </p>
                                   </div>
                                 </div>
                               )}

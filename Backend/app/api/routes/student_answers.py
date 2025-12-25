@@ -24,11 +24,12 @@ router = APIRouter()
 @router.get("/", response_model=List[dict])
 def get_all_student_answers(
     module_id: Optional[UUID] = Query(None, description="Filter by module ID"),
+    question_id: Optional[UUID] = Query(None, description="Filter by question ID"),
     student_id: Optional[str] = Query(None, description="Filter by student ID"),
     db: Session = Depends(get_db)
 ):
     """
-    Get all student answers, optionally filtered by module or student
+    Get all student answers, optionally filtered by module, question, or student
     """
     try:
         if module_id:
@@ -39,7 +40,7 @@ def get_all_student_answers(
             # Get all answers (you might want to add pagination here)
             from app.models.student_answer import StudentAnswer
             from app.models.question import Question
-            
+
             query = db.query(
                 StudentAnswer,
                 Question.text,
@@ -50,6 +51,9 @@ def get_all_student_answers(
 
             if student_id:
                 query = query.filter(StudentAnswer.student_id == student_id)
+
+            if question_id:
+                query = query.filter(StudentAnswer.question_id == question_id)
 
             results = query.all()
 
@@ -71,7 +75,7 @@ def get_all_student_answers(
                     "correct_option_id": correct_option_id
                 }
                 answer_list.append(answer_dict)
-            
+
             return answer_list
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch student answers: {str(e)}")
