@@ -7,7 +7,7 @@ import { FadeIn, SlideInLeft, SlideInRight, ScaleIn, Float } from './AnimationWr
 
 export default function HeroSection() {
   return (
-    <section className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white to-slate-50 dark:from-slate-950 dark:to-slate-900 px-4 py-12 md:py-20">
+    <section className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white to-slate-50 px-4 py-12 md:py-20">
       <div className="max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16 lg:gap-20 items-center">
         
         {/* Left: Playful 3D Visual */}
@@ -39,7 +39,7 @@ export default function HeroSection() {
               />
              
               <div className="absolute inset-0 flex items-center justify-center px-2 sm:px-4">
-                <p className="text-xs sm:text-sm md:text-base font-bold text-slate-800 dark:text-slate-200 text-center leading-tight">
+                <p className="text-xs sm:text-sm md:text-base font-bold text-slate-800 text-center leading-tight">
                   Trust me bruh, <br/>I'm bot
                 </p>
               </div>
@@ -47,7 +47,7 @@ export default function HeroSection() {
 
              */}
               {/* Soft Shadow */}
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-48 h-6 bg-slate-300/60 dark:bg-slate-700/40 rounded-[100%] blur-xl" />
+              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-48 h-6 bg-slate-300/60 rounded-[100%] blur-xl" />
             </div>
           </Float>
         </SlideInLeft>
@@ -55,14 +55,14 @@ export default function HeroSection() {
         {/* Right: Bold Minimalist Content */}
         <SlideInRight duration={0.8} className="order-1 md:order-2 flex flex-col items-center md:items-start text-center md:text-left space-y-6 px-4 md:px-0">
           <FadeIn delay={0.2} duration={0.8}>
-            <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-5xl xl:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-[1.1]">
+            <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-5xl xl:text-5xl font-black tracking-tight text-slate-900 leading-[1.1]">
               <span className="whitespace-nowrap">AI-powered learning</span><br />
               that actually works.
             </h1>
           </FadeIn>
 
           <FadeIn delay={0.4} duration={0.8}>
-            <p className="text-base sm:text-lg md:text-xl font-medium text-slate-600 dark:text-slate-300 max-w-md">
+            <p className="text-base sm:text-lg md:text-xl font-medium text-slate-600 max-w-md">
               Integrate AI in your teaching and learning
             </p>
           </FadeIn>
@@ -80,7 +80,7 @@ export default function HeroSection() {
             <Button
               asChild
               variant="outline"
-              className="h-12 sm:h-14 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-emerald-700 dark:text-emerald-300 border-2 border-b-4 border-emerald-700 dark:border-emerald-500 hover:border-emerald-800 dark:hover:border-emerald-400 active:border-b-2 active:translate-y-1 transition-all rounded-2xl text-base sm:text-lg font-bold uppercase tracking-wider"
+              className="h-12 sm:h-14 bg-white hover:bg-slate-50 text-emerald-700 border-2 border-b-4 border-emerald-700 hover:border-emerald-800 active:border-b-2 active:translate-y-1 transition-all rounded-2xl text-base sm:text-lg font-bold uppercase tracking-wider"
             >
               <Link href="/sign-in">I already have an account</Link>
             </Button>
