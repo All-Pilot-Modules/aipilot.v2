@@ -332,16 +332,16 @@ export default function MyModules() {
                         id="name"
                         value={formData.name}
                         onChange={(e) => {
-                          const value = e.target.value.replace(/\s/g, '');
+                          const value = e.target.value.replace(/[\s\/]/g, '');
                           setFormData({...formData, name: value});
                         }}
                         placeholder="e.g., intro-to-programming"
                         required
-                        pattern="[^\s]+"
-                        title="Module name cannot contain spaces"
+                        pattern="[^\s\/]+"
+                        title="Module name cannot contain spaces or forward slashes"
                         className="h-10"
                       />
-                      <p className="text-xs text-muted-foreground">Use hyphens or underscores instead of spaces</p>
+                      <p className="text-xs text-muted-foreground">Use hyphens or underscores instead of spaces or slashes</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="description" className="text-sm font-medium">Description</Label>
