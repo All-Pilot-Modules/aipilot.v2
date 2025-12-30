@@ -4,7 +4,6 @@ import HowItWorksSection from './HowItWorksSection';
 import BrandSection from './BrandSection';
 import TestimonialsSection from './TestimonialsSection';
 import StudentAccessSection from './StudentAccessSection';
-import FinalCTA from './FinalCTA';
 import Footer from './Footer';
 
 export default function LandingPage() {
@@ -17,7 +16,6 @@ export default function LandingPage() {
         <FeaturesSection />
         <TestimonialsSection />
         <StudentAccessSection />
-        <FinalCTA />
       </main>
       <Footer />
     </div>

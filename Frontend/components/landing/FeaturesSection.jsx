@@ -193,7 +193,7 @@ const features = [
   {
     label: "AI ANALYTICS",
     headline: "See exactly what your students need",
-    description: "Real-time insights reveal learning gaps instantly. No more guessing—AI shows you exactly where each student needs help.",
+    description: "Real-time insights reveal learning gaps instantly.",
     bgColor: "bg-[#f3a952]", // Podia-style orange
     illustration: <AnalyticCard />,
     reverse: false
@@ -231,9 +231,9 @@ const features = [
     reverse: false
   },
   {
-    label: "MASTERY LEARNING",
-    headline: "Track progress with streaks and adaptive paths",
-    description: "Students advance at their own pace with mastery-based progression. Track streaks, manage multiple attempts, and ensure deep understanding.",
+    label: "AI + MANUAL GRADING",
+    headline: "Best of both worlds: AI speed with human insight",
+    description: "Let AI handle the initial grading instantly, then add your expert feedback and adjust scores as needed. Review student work with AI-generated insights, override grades where your judgment matters, and provide personalized comments. Perfect balance of automation and personalized teaching.",
     bgColor: "bg-[#e6a8b8]", // Podia-style pink
     illustration: <MasteryCard />,
     reverse: true
@@ -244,7 +244,7 @@ export default function FeaturesSection() {
   return (
     <section className="py-20 bg-white">
       <div className="max-w-6xl mx-auto px-6">
-        <div className="space-y-32">
+        <div className="space-y-48">
           {features.map((feature, index) => {
             const ImageWrapper = feature.reverse ? SlideInRight : SlideInLeft;
             const TextWrapper = feature.reverse ? SlideInLeft : SlideInRight;

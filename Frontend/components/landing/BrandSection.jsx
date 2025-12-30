@@ -4,10 +4,10 @@ import { FadeIn, SlideInLeft } from './AnimationWrapper';
 
 const brands = [
   { name: " Brockport", logo: "SUNY" },
-  { name: "", logo: "SC" },
-  { name: "Institute of Learning", logo: "IOL" },
-  { name: "Academic Center", logo: "AC" },
-  { name: "Education Institute", logo: "EI" },
+  // { name: "", logo: "SC" },
+  // { name: "Institute of Learning", logo: "IOL" },
+  // { name: "Academic Center", logo: "AC" },
+  // { name: "Education Institute", logo: "EI" },
   { name: "Learning Academy", logo: "LA" },
 ];
 

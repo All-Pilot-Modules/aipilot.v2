@@ -77,10 +77,10 @@ export default function Footer() {
             <Float duration={5}>
               <div className="bg-white rounded-[40px] p-12 md:p-20 text-center shadow-sm">
                 <h2 className="text-3xl md:text-5xl font-bold text-[#1a212c] tracking-tighter leading-[1.1] mb-4">
-                  Business is much simpler when<br />everything is in one place
+                  Creating assignments is easier<br />when everything is in one place
                 </h2>
                 <p className="text-lg text-slate-600 mb-10">
-                  See for yourself. Try it free for 30 days.
+                  Start building your AI-powered classroom today.
                 </p>
                 <Button
                   asChild

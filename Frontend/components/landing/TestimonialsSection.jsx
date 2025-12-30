@@ -46,7 +46,7 @@ export default function TestimonialsSection() {
         {/* Header - High Contrast Podia Style */}
         <FadeIn className="text-center mb-20">
           <h2 className="text-4xl md:text-7xl font-black text-[#1a212c] tracking-tighter leading-[1.05] mb-6">
-            Trusted by the world’s<br />best educators.
+            Trusted by the lots of <br />students & educators.
           </h2>
           <p className="text-xl text-slate-500 font-medium max-w-2xl mx-auto">
             Join thousands of teachers who have automated their admin work and focused back on their students.
