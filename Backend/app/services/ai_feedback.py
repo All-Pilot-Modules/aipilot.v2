@@ -16,8 +16,16 @@ from app.services.prompt_builder import (
     build_text_feedback_prompt,
     should_include_context
 )
-from app.crud.ai_feedback import create_feedback, get_feedback_by_answer
+from app.crud.ai_feedback import (
+    create_feedback,
+    get_feedback_by_answer,
+    create_pending_feedback,
+    update_feedback_status,
+    complete_feedback_generation,
+    mark_feedback_failed
+)
 from app.schemas.ai_feedback import AIFeedbackCreate
+from app.services.openai_client import OpenAIClientWithRetry
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +33,8 @@ class AIFeedbackService:
     """Service for generating AI-powered feedback on student answers"""
 
     def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        # Use the new OpenAI client with retry logic
+        self.client = OpenAIClientWithRetry(api_key=OPENAI_API_KEY, default_model=LLM_MODEL)
         self.default_model = LLM_MODEL
 
     def generate_instant_feedback(
@@ -48,21 +57,80 @@ class AIFeedbackService:
             Dict with feedback data
         """
         try:
-            # Check if feedback already exists for this answer
+            # ========== STEP 1: Check if feedback already exists ==========
             existing_feedback = get_feedback_by_answer(db, student_answer.id)
 
             if existing_feedback:
-                logger.info(f"Returning existing feedback for answer {student_answer.id}")
-                return self._feedback_model_to_dict(existing_feedback)
+                # Check status of existing feedback
+                if existing_feedback.generation_status == 'completed':
+                    # Only return if feedback_data actually exists (not NULL)
+                    if existing_feedback.feedback_data:
+                        logger.info(f"✅ Returning existing completed feedback for answer {student_answer.id}")
+                        return self._feedback_model_to_dict(existing_feedback)
+                    else:
+                        # Status says 'completed' but data is NULL - regenerate
+                        logger.warning(f"⚠️ Status is 'completed' but feedback_data is NULL - regenerating for answer {student_answer.id}")
+                        # Continue with generation
 
-            # Get question details
+                elif existing_feedback.generation_status in ['pending', 'generating']:
+                    # IMPORTANT: If status is 'pending' but feedback_data is NULL, this is a RETRY
+                    # (reset_feedback_for_retry sets status to 'pending' for retries)
+                    # We should continue with generation, NOT return early!
+                    if existing_feedback.feedback_data is None:
+                        logger.info(f"🔄 Status is '{existing_feedback.generation_status}' but feedback_data is NULL - this is a retry, continuing with generation for answer {student_answer.id}")
+                        # Continue with generation
+                    else:
+                        # Feedback data exists and is currently being generated - return early
+                        logger.info(f"⏳ Feedback already being generated for answer {student_answer.id}")
+                        return self._feedback_model_to_dict(existing_feedback)
+
+                elif existing_feedback.generation_status in ['failed', 'timeout']:
+                    logger.info(f"🔄 Re-generating failed feedback for answer {student_answer.id}")
+                    # Continue with re-generation
+                else:
+                    # Unknown status, return existing
+                    logger.warning(f"⚠️ Unknown feedback status: {existing_feedback.generation_status}")
+                    return self._feedback_model_to_dict(existing_feedback)
+
+            # ========== STEP 2: Create pending feedback row FIRST ==========
+            if not existing_feedback:
+                logger.info(f"📝 Creating pending feedback row for answer {student_answer.id}")
+                existing_feedback = create_pending_feedback(
+                    db=db,
+                    answer_id=student_answer.id,
+                    timeout_seconds=120  # 2 minutes timeout
+                )
+
+            # ========== STEP 3: Update status to 'generating' ==========
+            update_feedback_status(
+                db=db,
+                answer_id=student_answer.id,
+                status='generating',
+                progress=10
+            )
+
+            # ========== STEP 4: Load question and module data ==========
             question = get_question_by_id(db, question_id)
             if not question:
+                mark_feedback_failed(
+                    db=db,
+                    answer_id=student_answer.id,
+                    error_message="Question not found",
+                    error_type="data_error"
+                )
                 return self._error_response("Question not found")
+
+            update_feedback_status(db, student_answer.id, 'generating', 20)
 
             # Get module configuration
             module = db.query(Module).filter(Module.id == module_id).first()
             if not module:
+                mark_feedback_failed(
+                    db=db,
+                    answer_id=student_answer.id,
+                    error_message="Module not found",
+                    error_type="data_error"
+                )
                 return self._error_response("Module not found")
 
             # Get rubric configuration (merges with defaults)
@@ -70,6 +138,8 @@ class AIFeedbackService:
 
             # Get AI model from rubric or use default
             ai_model = self._get_ai_model_from_rubric(rubric)
+
+            update_feedback_status(db, student_answer.id, 'generating', 30)
 
             # Extract student's answer based on format
             student_answer_text = self._extract_answer_text(student_answer.answer)
@@ -109,7 +179,9 @@ class AIFeedbackService:
             else:
                 logger.info(f"⏭️  Skipping RAG (should_include_context=False)")
 
-            # Generate feedback based on question type
+            update_feedback_status(db, student_answer.id, 'generating', 50)
+
+            # ========== STEP 5: Generate feedback based on question type ==========
             if question.type == 'mcq':
                 feedback = self._analyze_mcq_answer(
                     student_answer=student_answer_text,
@@ -169,29 +241,38 @@ class AIFeedbackService:
                 "rag_sources": rag_context.get("sources", []) if rag_context and rag_context.get("has_context") else None
             }
 
-            # Save feedback to database
+            update_feedback_status(db, student_answer.id, 'generating', 90)
+
+            # ========== STEP 6: Save completed feedback to database ==========
             try:
-                logger.info(f"💾 Attempting to save feedback for answer_id: {student_answer.id}")
+                logger.info(f"💾 Saving completed feedback for answer_id: {student_answer.id}")
                 logger.info(f"💾 Feedback data: is_correct={feedback.get('is_correct')}, score={feedback.get('correctness_score')}")
 
-                feedback_create = AIFeedbackCreate(
+                db_feedback = complete_feedback_generation(
+                    db=db,
                     answer_id=student_answer.id,
-                    is_correct=feedback.get("is_correct"),  # Allow None when no correct answer
-                    score=feedback.get("correctness_score"),  # Allow None when no correct answer
                     feedback_data=feedback_data,
+                    is_correct=feedback.get("is_correct"),
+                    score=feedback.get("correctness_score"),
                     points_earned=feedback.get("points_earned"),
                     points_possible=feedback.get("points_possible"),
                     criterion_scores=feedback.get("criterion_scores"),
-                    confidence_level=feedback.get("confidence_level")
+                    confidence_level=feedback.get("confidence_level"),
+                    ai_model=ai_model
                 )
-
-                db_feedback = create_feedback(db, feedback_create)
-                logger.info(f"✅ Feedback saved to database with ID: {db_feedback.id}")
+                logger.info(f"✅ Feedback completed successfully with ID: {db_feedback.id}")
 
             except Exception as db_error:
                 logger.error(f"❌ Failed to save feedback to database: {str(db_error)}")
                 logger.exception("Full traceback:")
-                # Continue even if database save fails - return the feedback anyway
+                # Mark as failed
+                mark_feedback_failed(
+                    db=db,
+                    answer_id=student_answer.id,
+                    error_message=f"Database error: {str(db_error)}",
+                    error_type="database_error"
+                )
+                raise
 
             # Return complete feedback for API response
             return {
@@ -204,7 +285,20 @@ class AIFeedbackService:
             }
 
         except Exception as e:
-            logger.error(f"Error generating feedback: {str(e)}")
+            logger.error(f"❌ Error generating feedback: {str(e)}")
+            logger.exception("Full traceback:")
+
+            # Mark feedback as failed
+            try:
+                mark_feedback_failed(
+                    db=db,
+                    answer_id=student_answer.id,
+                    error_message=str(e),
+                    error_type="generation_error"
+                )
+            except:
+                logger.error("Failed to mark feedback as failed")
+
             return self._error_response(f"Failed to generate feedback: {str(e)}")
     
     def _get_ai_model_from_module(self, module: Optional[Module]) -> str:
@@ -304,9 +398,10 @@ class AIFeedbackService:
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         try:
-            response = self.client.chat.completions.create(
-                model=ai_model,
+            # Use the new retry-enabled client
+            response = self.client.create_chat_completion(
                 messages=[{"role": "user", "content": prompt}],
+                model=ai_model,
                 temperature=0.3,
                 max_tokens=800  # Increased for RAG-enhanced feedback
             )
@@ -373,6 +468,12 @@ class AIFeedbackService:
         except json.JSONDecodeError as je:
             logger.error(f"JSON decode error: {str(je)}, Response: {feedback_text}")
             return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
+        except openai.APITimeoutError as e:
+            logger.error(f"⏱️ OpenAI timeout after retries: {str(e)}")
+            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
+        except openai.RateLimitError as e:
+            logger.error(f"🚫 OpenAI rate limit exceeded: {str(e)}")
+            return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
         except Exception as e:
             logger.error(f"OpenAI API error: {str(e)}")
             return self._fallback_mcq_feedback(student_answer, correct_answer, options, is_correct, question.points)
@@ -420,9 +521,10 @@ class AIFeedbackService:
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         try:
-            response = self.client.chat.completions.create(
-                model=ai_model,
+            # Use the new retry-enabled client
+            response = self.client.create_chat_completion(
                 messages=[{"role": "user", "content": prompt}],
+                model=ai_model,
                 temperature=0.3,
                 max_tokens=1200  # Increased for detailed RAG-enhanced feedback
             )
@@ -491,6 +593,12 @@ class AIFeedbackService:
 
         except json.JSONDecodeError as je:
             logger.error(f"JSON decode error: {str(je)}, Response: {feedback_text}")
+            return self._fallback_text_feedback(student_answer, correct_answer, question.type, question.points)
+        except openai.APITimeoutError as e:
+            logger.error(f"⏱️ OpenAI timeout after retries: {str(e)}")
+            return self._fallback_text_feedback(student_answer, correct_answer, question.type, question.points)
+        except openai.RateLimitError as e:
+            logger.error(f"🚫 OpenAI rate limit exceeded: {str(e)}")
             return self._fallback_text_feedback(student_answer, correct_answer, question.type, question.points)
         except Exception as e:
             logger.error(f"OpenAI API error: {str(e)}")
@@ -1194,6 +1302,7 @@ Make your feedback detailed, contextual, and helpful!"""
         """Convert AIFeedback model to dictionary for API response"""
         data = feedback_model.feedback_data or {}
         return {
+            # Feedback content (may be None if still generating)
             "is_correct": feedback_model.is_correct,
             "correctness_score": feedback_model.score,
             "explanation": data.get("explanation", ""),
@@ -1206,9 +1315,25 @@ Make your feedback detailed, contextual, and helpful!"""
             "available_options": data.get("available_options"),
             "used_rag": data.get("used_rag", False),
             "rag_sources": data.get("rag_sources"),
-            "model_used": data.get("model_used", "gpt-4"),
-            "confidence_level": data.get("confidence_level", "medium"),
+            "model_used": feedback_model.ai_model_used or data.get("model_used", "gpt-4"),
+            "confidence_level": feedback_model.confidence_level or data.get("confidence_level", "medium"),
+            "feedback_type": data.get("feedback_type", "unknown"),
+
+            # Status tracking (NEW)
+            "generation_status": feedback_model.generation_status,
+            "generation_progress": feedback_model.generation_progress,
+            "error_message": feedback_model.error_message,
+            "error_type": feedback_model.error_type,
+            "can_retry": feedback_model.can_retry,
+            "retry_count": feedback_model.retry_count,
+            "max_retries": feedback_model.max_retries,
+
+            # Timestamps
             "generated_at": feedback_model.generated_at.isoformat() if feedback_model.generated_at else None,
-            "feedback_id": str(feedback_model.id),
-            "feedback_type": data.get("feedback_type", "unknown")
+            "started_at": feedback_model.started_at.isoformat() if feedback_model.started_at else None,
+            "completed_at": feedback_model.completed_at.isoformat() if feedback_model.completed_at else None,
+            "generation_duration": feedback_model.generation_duration,
+
+            # IDs
+            "feedback_id": str(feedback_model.id)
         }

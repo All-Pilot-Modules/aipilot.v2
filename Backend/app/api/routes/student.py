@@ -49,6 +49,9 @@ def generate_feedback_background(student_id: str, module_id: str, attempt: int, 
             answer = db.query(StudentAnswer).filter(StudentAnswer.id == answer_id).first()
             if not answer:
                 logger.error(f"❌ Answer {answer_id} not found")
+                # Mark feedback as failed
+                from app.crud.ai_feedback import mark_feedback_failed
+                mark_feedback_failed(db, answer_id, "Answer not found", "data_error")
                 return {"success": False, "answer_id": answer_id, "error": "Answer not found"}
 
             logger.info(f"🔄 Generating feedback for question {answer.question_id}, answer {answer_id}")
@@ -69,6 +72,14 @@ def generate_feedback_background(student_id: str, module_id: str, attempt: int, 
             logger.error(f"❌ Failed to generate feedback for answer {answer_id}: {str(e)}")
             import traceback
             traceback.print_exc()
+
+            # CRITICAL: Mark feedback as failed so it doesn't stay stuck
+            try:
+                from app.crud.ai_feedback import mark_feedback_failed
+                mark_feedback_failed(db, answer_id, str(e), "generation_error")
+            except Exception as mark_error:
+                logger.error(f"❌ Failed to mark feedback as failed: {str(mark_error)}")
+
             return {"success": False, "answer_id": answer_id, "error": str(e)}
         finally:
             db.close()
@@ -105,6 +116,14 @@ def generate_feedback_background(student_id: str, module_id: str, attempt: int, 
                 except Exception as exc:
                     failed += 1
                     logger.error(f"❌ Task generated exception for {answer_id}: {exc}")
+                    # Ensure feedback is marked as failed even if future.result() crashed
+                    try:
+                        db_safety = SessionLocal()
+                        from app.crud.ai_feedback import mark_feedback_failed
+                        mark_feedback_failed(db_safety, answer_id, f"Exception: {str(exc)}", "generation_error")
+                        db_safety.close()
+                    except:
+                        pass
 
         elapsed_time = time.time() - start_time
         logger.info(f"✅ PARALLEL feedback generation completed for attempt {attempt}")
@@ -171,9 +190,21 @@ def generate_feedback_background(student_id: str, module_id: str, attempt: int, 
             db.close()
 
     except Exception as e:
-        logger.error(f"❌ Background feedback generation failed: {str(e)}")
+        logger.error(f"❌ Background feedback generation CRASHED: {str(e)}")
         import traceback
         traceback.print_exc()
+
+        # CRITICAL: Mark ALL remaining pending/generating feedback as failed
+        # This prevents UI from being stuck in loading state
+        try:
+            db_cleanup = SessionLocal()
+            from app.crud.ai_feedback import cleanup_stale_feedback
+            from uuid import UUID
+            marked = cleanup_stale_feedback(db_cleanup, UUID(module_id), student_id)
+            logger.error(f"🧹 Emergency cleanup: Marked {marked} feedback rows as failed after crash")
+            db_cleanup.close()
+        except Exception as cleanup_error:
+            logger.error(f"❌ Emergency cleanup also failed: {str(cleanup_error)}")
 
 
 # 🔍 Join module with access code
@@ -562,10 +593,15 @@ def get_module_feedback(
     Returns filtered feedback without technical metadata, including teacher grades if available
     IMPORTANT: Also includes teacher-only grades (where teacher graded but no AI feedback exists)
     """
-    from app.crud.ai_feedback import get_student_module_feedback
+    from app.crud.ai_feedback import get_student_module_feedback, cleanup_stale_feedback
     from app.models.student_answer import StudentAnswer
     from app.models.teacher_grade import TeacherGrade
     from app.models.question import Question
+
+    # Cleanup any stale feedback (silent failures from crashed background tasks)
+    marked_failed = cleanup_stale_feedback(db, module_id, student_id)
+    if marked_failed > 0:
+        logger.info(f"🧹 Marked {marked_failed} stale feedback rows as failed")
 
     # Get all feedback for student
     feedback_list = get_student_module_feedback(db, student_id, module_id)
@@ -625,7 +661,12 @@ def get_module_feedback(
                 "feedback_text": teacher_grade.feedback_text,
                 "graded_at": teacher_grade.graded_at.isoformat() if teacher_grade.graded_at else None
             } if teacher_grade else None,
-            "is_teacher_graded": teacher_grade is not None
+            "is_teacher_graded": teacher_grade is not None,
+            # Generation status for polling
+            "generation_status": feedback.generation_status,
+            "generation_progress": feedback.generation_progress,
+            "error_message": feedback.error_message,
+            "can_retry": feedback.can_retry if feedback.generation_status in ['failed', 'timeout'] else False
         }
 
         student_feedback.append(student_view)
@@ -905,6 +946,7 @@ def submit_test(
             "submission_id": str(submission.id),
             "attempt": attempt,
             "questions_submitted": len(answers),
+            "answer_ids": answer_ids,  # NEW: for frontend polling
             "can_retry": True,
             "max_attempts": max_attempts,
             "feedback_status": "generating",  # NEW: indicates feedback is being generated
@@ -1036,6 +1078,219 @@ def get_feedback_status(
         "all_complete": all_complete,
         "questions": feedback_status
     }
+
+# 🧹 Cleanup stale feedback (called by frontend after timeout)
+@router.post("/modules/{module_id}/cleanup-feedback")
+def cleanup_stale_module_feedback(
+    module_id: UUID,
+    student_id: str = Query(..., description="Student ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Cleanup stale feedback that has been stuck in pending/generating status.
+    Called by frontend when polling times out.
+
+    Returns:
+        Number of feedback rows marked as failed
+    """
+    from app.crud.ai_feedback import cleanup_stale_feedback, create_pending_feedback
+    from app.models.student_answer import StudentAnswer
+    from app.models.ai_feedback import AIFeedback
+
+    logger.info(f"🧹 Cleanup requested for module {module_id}, student {student_id}")
+
+    # First, check if feedback rows even exist
+    answers = db.query(StudentAnswer).filter(
+        StudentAnswer.student_id == student_id,
+        StudentAnswer.module_id == module_id
+    ).all()
+
+    logger.info(f"📊 Found {len(answers)} answers for student")
+
+    # Check which answers have feedback
+    missing_feedback = []
+    for answer in answers:
+        feedback = db.query(AIFeedback).filter(AIFeedback.answer_id == answer.id).first()
+        if not feedback:
+            missing_feedback.append(answer.id)
+            logger.warning(f"⚠️ Answer {answer.id} has no feedback row - creating failed placeholder")
+            # Create a failed feedback row
+            try:
+                new_feedback = AIFeedback(
+                    answer_id=answer.id,
+                    generation_status='timeout',
+                    generation_progress=0,
+                    error_message="Feedback generation failed - no record found (background task may have crashed before starting)",
+                    error_type='timeout',
+                    feedback_data=None,
+                    is_correct=None,
+                    score=None,
+                    can_retry=True,
+                    retry_count=0
+                )
+                db.add(new_feedback)
+            except Exception as e:
+                logger.error(f"Failed to create placeholder feedback: {e}")
+
+    if missing_feedback:
+        try:
+            db.commit()
+            logger.info(f"✅ Created {len(missing_feedback)} placeholder feedback rows")
+        except Exception as e:
+            logger.error(f"Failed to commit placeholder feedback: {e}")
+            db.rollback()
+
+    # Now run the regular cleanup
+    marked_failed = cleanup_stale_feedback(db, module_id, student_id)
+
+    total_fixed = len(missing_feedback) + marked_failed
+    if total_fixed > 0:
+        logger.info(f"🧹 Cleanup: Fixed {total_fixed} feedback rows ({len(missing_feedback)} missing, {marked_failed} stale)")
+
+    return {
+        "success": True,
+        "marked_failed": marked_failed,
+        "created_placeholders": len(missing_feedback),
+        "total_fixed": total_fixed,
+        "message": f"Fixed {total_fixed} feedback rows"
+    }
+
+
+# 🔄 Regenerate all failed feedback for an attempt
+@router.post("/modules/{module_id}/regenerate-all-feedback")
+def regenerate_all_failed_feedback(
+    module_id: UUID,
+    student_id: str = Query(..., description="Student ID"),
+    attempt: int = Query(..., description="Attempt number"),
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerate all failed/timeout feedback for a specific attempt.
+    This is a bulk retry operation.
+
+    Returns:
+        Status of retry operations
+    """
+    from app.crud.ai_feedback import get_feedback_by_answer
+    from app.models.student_answer import StudentAnswer
+    from app.models.ai_feedback import AIFeedback
+    from app.services.ai_feedback import AIFeedbackService
+
+    logger.info(f"🔄 Regenerate all feedback requested for module {module_id}, student {student_id}, attempt {attempt}")
+
+    # Get module to check max_attempts
+    module = get_module_by_id(db, str(module_id))
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    # Get max attempts from module settings (default to 2)
+    max_attempts = 2
+    if module.assignment_config:
+        multiple_attempts_config = module.assignment_config.get("features", {}).get("multiple_attempts", {})
+        max_attempts = multiple_attempts_config.get("max_attempts", 2)
+
+    # IMPORTANT: Only regenerate feedback for attempts that should have AI feedback
+    # Final attempt (attempt >= max_attempts) is for teacher manual grading
+    if attempt >= max_attempts:
+        logger.warning(f"❌ Cannot regenerate feedback for attempt {attempt} - this is the final attempt reserved for teacher grading (max_attempts={max_attempts})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot regenerate AI feedback for attempt {attempt}. This is the final attempt reserved for teacher manual grading. AI feedback is only available for attempts 1-{max_attempts - 1}."
+        )
+
+    # Find all answers for this attempt
+    answers = db.query(StudentAnswer).filter(
+        StudentAnswer.student_id == student_id,
+        StudentAnswer.module_id == module_id,
+        StudentAnswer.attempt == attempt
+    ).all()
+
+    if not answers:
+        raise HTTPException(status_code=404, detail="No answers found for this attempt")
+
+    # Find which ones have failed/timeout feedback
+    failed_answer_ids = []
+    for answer in answers:
+        feedback = db.query(AIFeedback).filter(AIFeedback.answer_id == answer.id).first()
+        if feedback and feedback.generation_status in ['failed', 'timeout'] and feedback.can_retry:
+            failed_answer_ids.append(str(answer.id))
+
+    if not failed_answer_ids:
+        return {
+            "success": True,
+            "message": "No failed feedback found to retry",
+            "total_answers": len(answers),
+            "failed_count": 0,
+            "retried_count": 0
+        }
+
+    logger.info(f"📊 Found {len(failed_answer_ids)} failed feedback to retry")
+
+    # Trigger regeneration for all failed feedback
+    from app.database import SessionLocal
+    from app.crud.ai_feedback import reset_feedback_for_retry
+    import threading
+
+    def regenerate_all():
+        """Background thread to regenerate all failed feedback"""
+        # Create a new database session for this thread
+        thread_db = SessionLocal()
+        feedback_service = AIFeedbackService()
+
+        try:
+            for answer_id_str in failed_answer_ids:
+                try:
+                    answer_id = UUID(answer_id_str)
+                    logger.info(f"🔄 Retrying feedback for answer {answer_id}")
+
+                    # Reset feedback for retry
+                    feedback = reset_feedback_for_retry(thread_db, answer_id)
+
+                    if not feedback:
+                        logger.error(f"❌ Failed to reset feedback for answer {answer_id}")
+                        continue
+
+                    # Get the student answer
+                    answer = thread_db.query(StudentAnswer).filter(StudentAnswer.id == answer_id).first()
+
+                    if not answer:
+                        logger.error(f"❌ Answer {answer_id} not found")
+                        continue
+
+                    # Trigger regeneration
+                    result = feedback_service.generate_instant_feedback(
+                        db=thread_db,
+                        student_answer=answer,
+                        question_id=str(answer.question_id),
+                        module_id=str(answer.module_id)
+                    )
+
+                    logger.info(f"✅ Retry queued for answer {answer_id}")
+
+                except Exception as e:
+                    logger.error(f"❌ Error retrying feedback for answer {answer_id_str}: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"❌ Error in bulk regeneration: {e}")
+        finally:
+            thread_db.close()
+            logger.info(f"🏁 Bulk regeneration completed for {len(failed_answer_ids)} answers")
+
+    # Start background thread
+    thread = threading.Thread(target=regenerate_all)
+    thread.daemon = True
+    thread.start()
+
+    return {
+        "success": True,
+        "message": f"Started regenerating {len(failed_answer_ids)} failed feedback",
+        "total_answers": len(answers),
+        "failed_count": len(failed_answer_ids),
+        "retried_count": len(failed_answer_ids),
+        "answer_ids": failed_answer_ids
+    }
+
 
 # 💬 Submit or update feedback critique (student rates AI feedback)
 @router.post("/feedback/{feedback_id}/critique")
