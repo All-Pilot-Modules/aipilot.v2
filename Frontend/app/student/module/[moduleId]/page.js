@@ -1457,6 +1457,25 @@ const StudentModuleContent = memo(function StudentModuleContent() {
 
           {/* Feedback Tab */}
           <TabsContent value="feedback" className="space-y-6">
+            {/* DEBUG: Show feedback data state */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg text-xs font-mono space-y-2">
+                <div className="font-bold mb-2">FEEDBACK DATA DEBUG</div>
+                <div>FeedbackData entries: {Object.keys(feedbackData).length}</div>
+                <div>FeedbackByAttempt[{selectedAttempt}] entries: {Object.keys(feedbackByAttempt[selectedAttempt] || {}).length}</div>
+                <div>Questions count: {questions?.length || 0}</div>
+                <div>Update Counter: {feedbackUpdateCounter}</div>
+                {Object.keys(feedbackData).length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-blue-200">
+                    <div className="font-bold mb-1">First Feedback Sample:</div>
+                    <div className="text-xs overflow-auto max-h-40">
+                      {JSON.stringify(Object.values(feedbackData)[0], null, 2)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Show beautiful loading banner when actively generating feedback */}
             {isPolling && feedbackStatus && (
               <FeedbackGeneratingBanner
