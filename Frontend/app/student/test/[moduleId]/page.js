@@ -55,7 +55,14 @@ const StudentTestPage = memo(function StudentTestPage() {
   const params = useParams();
   const router = useRouter();
   const moduleId = params?.moduleId;
-  
+
+  // Prevent SSR - ensure we only render on client
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   const [moduleAccess, setModuleAccess] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -725,6 +732,17 @@ const StudentTestPage = memo(function StudentTestPage() {
         console.log(`💡 Feedback generated for ${result.feedback_generated || 0} questions`);
         console.log(`📊 Submitted ${result.questions_submitted} questions`);
 
+        // Store answer_ids for feedback polling
+        if (result.answer_ids && result.answer_ids.length > 0) {
+          const storageKey = `feedback_polling_${moduleId}_${currentAttempt}`;
+          localStorage.setItem(storageKey, JSON.stringify({
+            answerIds: result.answer_ids,
+            timestamp: Date.now(),
+            attempt: currentAttempt
+          }));
+          console.log(`💾 Stored ${result.answer_ids.length} answer IDs for feedback polling`);
+        }
+
         // Check if this was the last attempt
         const isLastAttempt = result.can_retry === false;
 
@@ -1000,6 +1018,11 @@ const StudentTestPage = memo(function StudentTestPage() {
     const masked = '*'.repeat(idStr.length - 2);
     return masked + lastTwo;
   };
+
+  // Don't render anything on server to prevent fetch errors during SSR
+  if (!isClient) {
+    return null;
+  }
 
   if (loading) {
     return (

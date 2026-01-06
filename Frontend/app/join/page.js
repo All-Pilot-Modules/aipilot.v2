@@ -92,9 +92,44 @@ export default function JoinModule() {
 
       // Check if module requires consent
       if (module.consent_required !== false) {
-        // Show consent modal
-        setEnrolledModule(module);
-        setShowConsentModal(true);
+        // First, check if student has already consented
+        const consentKey = `consent_${module.id}_${formData.bannerId.trim()}`;
+        const storedConsent = localStorage.getItem(consentKey);
+
+        if (storedConsent) {
+          // Student has already consented, redirect directly
+          console.log('✅ Consent already submitted (found in localStorage), redirecting...');
+          setTimeout(() => {
+            router.push(`/student/module/${module.id}`);
+          }, 1500);
+        } else {
+          // Check via API if student has consented
+          try {
+            const consentResponse = await apiClient.get(
+              `/api/modules/${module.id}/consent/${formData.bannerId.trim()}`
+            );
+
+            const { has_consented } = consentResponse;
+
+            if (has_consented) {
+              // Student has already consented in database, store in localStorage and redirect
+              localStorage.setItem(consentKey, 'true');
+              console.log('✅ Consent found in database, saved to localStorage, redirecting...');
+              setTimeout(() => {
+                router.push(`/student/module/${module.id}`);
+              }, 1500);
+            } else {
+              // Student hasn't consented yet, show consent modal
+              setEnrolledModule(module);
+              setShowConsentModal(true);
+            }
+          } catch (consentError) {
+            console.error('Failed to check consent status:', consentError);
+            // If consent check fails, show the modal to be safe
+            setEnrolledModule(module);
+            setShowConsentModal(true);
+          }
+        }
       } else {
         // No consent required, redirect immediately
         setTimeout(() => {

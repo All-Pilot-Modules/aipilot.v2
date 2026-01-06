@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense, memo } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,8 @@ import {
   ArrowRight,
   ClipboardList,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from "lucide-react";
 import { apiClient } from "@/lib/auth";
 import { FullPageLoader } from '@/components/LoadingSpinner';
@@ -36,6 +37,13 @@ import { PageLoadingSkeleton, CardSkeleton } from '@/components/SkeletonLoader';
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from '@/lib/errorMessages';
 import { FeedbackCritique } from '@/components/FeedbackCritique';
+import { FeedbackStatusIndicator } from '@/components/FeedbackStatusIndicator';
+import {
+  FeedbackGeneratingBanner,
+  FeedbackSkeletonCard,
+  QuestionFeedbackLoader,
+  AllQuestionsLoader
+} from '@/components/FeedbackLoader';
 
 // Dynamically import heavy components for better code splitting
 const ChatTab = dynamic(() => import('./ChatTab'), {
@@ -59,9 +67,25 @@ const StudentModuleContent = memo(function StudentModuleContent() {
   const searchParams = useSearchParams();
   const moduleId = params?.moduleId;
 
+  // Prevent SSR - ensure we only render on client
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   // Get tab from URL parameter, default to "assignments"
   const initialTab = searchParams.get('tab') || 'assignments';
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Sync activeTab with URL parameter changes (important for redirects)
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') || 'assignments';
+    if (tabParam !== activeTab) {
+      console.log(`🔄 Tab changed via URL: ${activeTab} → ${tabParam}`);
+      setActiveTab(tabParam);
+    }
+  }, [searchParams, activeTab]);
 
   // State declarations - MUST come before useEffect hooks
   const [moduleAccess, setModuleAccess] = useState(null);
@@ -82,6 +106,9 @@ const StudentModuleContent = memo(function StudentModuleContent() {
   const [answeredQuestions, setAnsweredQuestions] = useState({}); // Track which questions were answered
   const [expandedRubrics, setExpandedRubrics] = useState({}); // Track which rubric breakdowns are expanded
   const [hasTeacherGrades, setHasTeacherGrades] = useState(false); // Track if teacher has graded any work
+  const [cleaningUp, setCleaningUp] = useState(false); // Track cleanup in progress
+  const [regeneratingAll, setRegeneratingAll] = useState(false); // Track regenerate all in progress
+  const [feedbackUpdateCounter, setFeedbackUpdateCounter] = useState(0); // Force re-render when feedback updates
 
   // Consent modal state
   const [showConsentModal, setShowConsentModal] = useState(false);
@@ -112,17 +139,29 @@ const StudentModuleContent = memo(function StudentModuleContent() {
         `/api/modules/${moduleId}/consent/${access.studentId}`
       );
 
-      const { has_consented, is_enrolled } = response;
+      const { has_consented, is_enrolled, consent_status } = response;
 
-      // If student has already consented (from previous session), store it in localStorage
+      console.log('🔍 Consent API response:', {
+        has_consented,
+        is_enrolled,
+        consent_status,
+        waiver_status: consent_status // consent_status = waiver_status from backend
+      });
+
+      // If student has already consented (waiver_status is not NULL), store it in localStorage
       if (has_consented) {
         localStorage.setItem(consentKey, 'true');
-        console.log('✅ Consent found in database, saved to localStorage');
+        console.log('✅ Consent found in database (waiver_status not NULL), saved to localStorage');
+        setConsentChecked(true);
+        return; // Don't show modal
       }
 
-      // If module requires consent and student hasn't consented
+      // If module requires consent and student hasn't consented (waiver_status is NULL)
       if (is_enrolled && !has_consented) {
+        console.log('⚠️ Showing consent modal - waiver_status is NULL');
         setShowConsentModal(true);
+      } else {
+        console.log('✅ Not showing consent modal - student not enrolled or already consented');
       }
 
       setConsentChecked(true);
@@ -161,10 +200,23 @@ const StudentModuleContent = memo(function StudentModuleContent() {
     return masked + lastTwo;
   };
 
-  // Effect to update feedbackData and answeredQuestions when selectedAttempt changes
+  // Effect to update feedbackData and answeredQuestions when selectedAttempt or feedbackByAttempt changes
   useEffect(() => {
     const currentFeedback = feedbackByAttempt[selectedAttempt] || {};
-    setFeedbackData(currentFeedback);
+    const feedbackCount = Object.keys(currentFeedback).length;
+    console.log(`🔄 [useEffect] Updating feedbackData for attempt ${selectedAttempt}: ${feedbackCount} items (counter: ${feedbackUpdateCounter})`);
+
+    // Create new object references at the top level to ensure React detects changes
+    const newFeedbackData = Object.keys(currentFeedback).reduce((acc, key) => {
+      acc[key] = currentFeedback[key];
+      return acc;
+    }, {});
+    setFeedbackData(newFeedbackData);
+
+    // Log the actual feedback IDs for debugging
+    if (feedbackCount > 0) {
+      console.log(`   Question IDs with feedback: ${Object.keys(currentFeedback).join(', ')}`);
+    }
 
     // Update answered questions for the selected attempt
     const updateAnsweredQuestionsForAttempt = async () => {
@@ -242,49 +294,19 @@ const StudentModuleContent = memo(function StudentModuleContent() {
     };
 
     updateAnsweredQuestionsForAttempt();
-  }, [selectedAttempt, feedbackByAttempt, moduleAccess, moduleId]);
-
-  // Effect to start polling when tab changes to feedback
-  useEffect(() => {
-    const startPollingIfNeeded = async () => {
-      if (activeTab === 'feedback' && moduleAccess && submissionStatus && !isPolling) {
-        const currentAttempt = submissionStatus.current_attempt || 1;
-
-        // Only poll if we have a submission (current_attempt > 1 means attempt 1 is done)
-        if (currentAttempt > 1) {
-          console.log('🔍 Checking if feedback is complete...');
-
-          // Check current feedback status
-          try {
-            const response = await apiClient.get(
-              `/api/student/modules/${moduleId}/feedback-status?student_id=${moduleAccess.studentId}&attempt=${currentAttempt - 1}`
-            );
-            const status = response?.data || response || {};
-
-            setFeedbackStatus(status);
-
-            if (!status.all_complete) {
-              console.log('🚀 Feedback incomplete - starting polling');
-              setIsPolling(true);
-            } else {
-              console.log('✅ All feedback already complete');
-            }
-          } catch (error) {
-            console.error('Failed to check feedback status:', error);
-          }
-        }
-      }
-    };
-
-    startPollingIfNeeded();
-  }, [activeTab, moduleAccess, submissionStatus, isPolling, moduleId]);
+  }, [selectedAttempt, feedbackByAttempt, feedbackUpdateCounter, moduleAccess, moduleId]);
 
   const loadFeedbackForAnswers = useCallback(async (access) => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`📥 [${timestamp}] Loading feedback for module ${moduleId}, student ${access.studentId}`);
+
     try {
       // Use the new API endpoint to fetch all feedback from database
-      const response = await apiClient.get(
-        `/api/student/modules/${moduleId}/feedback?student_id=${access.studentId}`
-      );
+      const apiUrl = `/api/student/modules/${moduleId}/feedback?student_id=${access.studentId}`;
+      console.log(`📥 [${timestamp}] API URL: ${apiUrl}`);
+
+      const response = await apiClient.get(apiUrl);
+      console.log(`📥 [${timestamp}] Response received:`, Array.isArray(response) ? `${response.length} items` : typeof response);
 
       // Group feedback by attempt
       const byAttempt = {};
@@ -298,17 +320,75 @@ const StudentModuleContent = memo(function StudentModuleContent() {
             byAttempt[attempt] = {};
           }
 
-          // Add feedback to the attempt group
-          byAttempt[attempt][feedbackItem.question_id] = feedbackItem;
+          // Add feedback to the attempt group - create new object reference
+          byAttempt[attempt][feedbackItem.question_id] = { ...feedbackItem };
+
+          // Log the status for debugging
+          if (attempt === (submissionStatus?.current_attempt - 1 || 1)) {
+            console.log(`   📋 Q${feedbackItem.question_id}: status=${feedbackItem.generation_status}, hasExplanation=${!!feedbackItem.explanation}`);
+          }
         });
       }
 
-      setFeedbackByAttempt(byAttempt);
+      // Create completely new object reference to trigger React update
+      // Important: counter increment will trigger useEffect to update feedbackData
+      setFeedbackByAttempt(prev => {
+        // Return new object only if data actually changed
+        const prevKeys = JSON.stringify(Object.keys(prev).sort());
+        const newKeys = JSON.stringify(Object.keys(byAttempt).sort());
+        if (prevKeys === newKeys) {
+          // Same attempts exist, check if any feedback changed or status updated
+          let hasChanges = false;
+          for (const attempt in byAttempt) {
+            const prevFeedback = prev[attempt] || {};
+            const newFeedback = byAttempt[attempt];
+            const prevCount = Object.keys(prevFeedback).length;
+            const newCount = Object.keys(newFeedback).length;
+
+            if (prevCount !== newCount) {
+              hasChanges = true;
+              break;
+            }
+
+            // Check if any feedback status changed
+            for (const qId in newFeedback) {
+              const prevStatus = prevFeedback[qId]?.generation_status;
+              const newStatus = newFeedback[qId]?.generation_status;
+              if (prevStatus !== newStatus) {
+                console.log(`   🔄 Status changed for Q${qId}: ${prevStatus} → ${newStatus}`);
+                hasChanges = true;
+                break;
+              }
+            }
+
+            if (hasChanges) break;
+          }
+          if (!hasChanges) {
+            console.log('   ℹ️ No changes detected, keeping previous state');
+            return prev; // No changes, return same reference
+          }
+        }
+        console.log('   ✅ State updated with new feedback data');
+        return { ...byAttempt }; // Return new reference
+      });
+
+      // Increment counter to force re-render of dependent components
+      setFeedbackUpdateCounter(prev => prev + 1);
 
       // Note: feedbackData will be set by the useEffect when selectedAttempt is determined
       // Don't set it here as selectedAttempt might still be the default value (1)
 
       const totalFeedback = Object.values(byAttempt).reduce((sum, attempt) => sum + Object.keys(attempt).length, 0);
+
+      // Log feedback breakdown by attempt (helpful for debugging polling)
+      const feedbackDetails = Object.keys(byAttempt).map(attemptNum => {
+        const feedbackCount = Object.keys(byAttempt[attemptNum]).length;
+        return `Attempt ${attemptNum}: ${feedbackCount} items`;
+      }).filter(detail => !detail.includes(': 0 items')).join(', ');
+
+      if (feedbackDetails) {
+        console.log(`📊 Feedback loaded: ${feedbackDetails} (Total: ${totalFeedback})`);
+      }
 
       // Check if any feedback has teacher grades
       const hasGrades = Object.values(byAttempt).some(attempt =>
@@ -316,10 +396,15 @@ const StudentModuleContent = memo(function StudentModuleContent() {
       );
       setHasTeacherGrades(hasGrades);
 
-      // Only log on first load or when count changes (reduce console spam)
-      if (!window._lastFeedbackCount || window._lastFeedbackCount !== totalFeedback) {
-        console.log(`✅ Loaded ${totalFeedback} feedback items from database (${Object.keys(byAttempt).length} attempts)`);
+      // Log when feedback count changes
+      const previousCount = window._lastFeedbackCount || 0;
+      if (previousCount !== totalFeedback) {
+        const diff = totalFeedback - previousCount;
+        console.log(`✅ 🎯 FEEDBACK UPDATED: ${previousCount} → ${totalFeedback} items (+${diff} new)`);
+        console.log(`   📍 UI will re-render now with updated feedback!`);
         window._lastFeedbackCount = totalFeedback;
+      } else if (totalFeedback > 0) {
+        console.log(`   ℹ️ Feedback count unchanged: ${totalFeedback} items`);
       }
 
       return byAttempt;
@@ -330,62 +415,160 @@ const StudentModuleContent = memo(function StudentModuleContent() {
     }
   }, [moduleId]);
 
+  // Effect to start polling when tab changes to feedback
+  useEffect(() => {
+    const startPollingIfNeeded = async () => {
+      if (activeTab === 'feedback' && moduleAccess && submissionStatus) {
+        const currentAttempt = submissionStatus.current_attempt || 1;
+
+        // Only poll if we have a submission (current_attempt > 1 means attempt 1 is done)
+        if (currentAttempt > 1) {
+          console.log('🔍 Checking if feedback is complete...');
+
+          // FIRST: Run cleanup to catch any stale feedback from previous sessions
+          console.log('🧹 Running cleanup for stale feedback...');
+          try {
+            await apiClient.post(
+              `/api/student/modules/${moduleId}/cleanup-feedback?student_id=${moduleAccess.studentId}`
+            );
+            console.log('✅ Cleanup completed');
+          } catch (error) {
+            console.error('Cleanup failed:', error);
+          }
+
+          // Reload feedback to get latest status
+          await loadFeedbackForAnswers(moduleAccess);
+
+          // THEN: Check current feedback status
+          try {
+            const response = await apiClient.get(
+              `/api/student/modules/${moduleId}/feedback-status?student_id=${moduleAccess.studentId}&attempt=${currentAttempt - 1}`
+            );
+            const status = response?.data || response || {};
+
+            setFeedbackStatus(status);
+
+            if (!status.all_complete) {
+              console.log('🚀 Feedback incomplete - starting polling NOW');
+              setIsPolling(true);
+            } else {
+              console.log('✅ All feedback already complete');
+            }
+          } catch (error) {
+            console.error('Failed to check feedback status:', error);
+            // If status check fails, start polling anyway to be safe
+            console.log('⚠️ Status check failed, starting polling to be safe');
+            setIsPolling(true);
+          }
+        }
+      }
+    };
+
+    startPollingIfNeeded();
+  }, [activeTab, moduleAccess, submissionStatus, moduleId, loadFeedbackForAnswers]);
+
   // Poll for feedback generation status
   const checkFeedbackStatus = useCallback(async (access, attempt) => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`📡 [${timestamp}] Fetching feedback status for attempt ${attempt}...`);
+
     try {
       const response = await apiClient.get(
         `/api/student/modules/${moduleId}/feedback-status?student_id=${access.studentId}&attempt=${attempt}`
       );
       const status = response?.data || response || {};
 
-      // Only log when status changes (reduce console spam)
-      const statusKey = `${status.feedback_ready}/${status.total_questions}`;
-      if (!window._lastFeedbackStatus || window._lastFeedbackStatus !== statusKey) {
-        console.log(`🔄 Feedback status: ${status.feedback_ready}/${status.total_questions} ready (${status.progress_percentage}%)`);
-        window._lastFeedbackStatus = statusKey;
-      }
+      console.log(`📊 [${timestamp}] Status received:`, {
+        ready: status.feedback_ready,
+        total: status.total_questions,
+        percentage: status.progress_percentage,
+        complete: status.all_complete
+      });
 
       setFeedbackStatus(status);
 
       // Load feedback data on every poll to show them as they're generated
-      await loadFeedbackForAnswers(access);
+      console.log(`📥 [${timestamp}] Loading feedback data...`);
+      await loadFeedbackForAnswers(access).catch(err => {
+        console.log(`❌ [${timestamp}] Feedback load failed:`, err.message || err);
+      });
+      console.log(`✅ [${timestamp}] Feedback data loaded successfully`);
 
       // If all feedback is complete, stop polling
       if (status.all_complete) {
-        console.log('✅ All feedback generated!');
+        console.log(`🎉 [${timestamp}] All feedback generated!`);
         setIsPolling(false);
         return true; // All complete
       }
 
       return false; // Still generating
     } catch (error) {
-      console.error('Failed to check feedback status:', error);
-      return false;
+      console.log(`⚠️ [${timestamp}] Feedback status check failed:`, error.message || error);
+      return false; // Keep polling even if status check fails
     }
   }, [moduleId, loadFeedbackForAnswers]);
 
-  const loadModuleContent = useCallback(async (access) => {
+  const loadModuleContent = useCallback(async (access, retryCount = 0) => {
+    const MAX_RETRIES = 5; // Maximum number of automatic retries
+
     try {
       setLoading(true);
 
-      // Load core data first
-      const [moduleResponse, documentsResponse, questionsResponse] = await Promise.all([
-        apiClient.get(`/api/modules/${moduleId}`),
-        apiClient.get(`/api/student/modules/${moduleId}/documents`),
-        apiClient.get(`/api/student/modules/${moduleId}/questions`)
-      ]);
+      // Load core data first - handle errors gracefully for non-critical data
+      let moduleResponse, documentsResponse, questionsResponse;
+
+      try {
+        [moduleResponse, documentsResponse, questionsResponse] = await Promise.all([
+          apiClient.get(`/api/modules/${moduleId}`),
+          apiClient.get(`/api/student/modules/${moduleId}/documents`).catch(err => {
+            console.log('Documents loading failed (non-critical):', err.message || err);
+            return { data: [] };
+          }),
+          apiClient.get(`/api/student/modules/${moduleId}/questions`)
+        ]);
+      } catch (error) {
+        // If core data fails due to connection issue, retry automatically
+        const isConnectionError = error.message?.includes('fetch') ||
+                                 error.message?.includes('timeout') ||
+                                 error.message?.includes('AbortError') ||
+                                 error.message?.includes('Failed to fetch');
+
+        if (isConnectionError) {
+          if (retryCount < MAX_RETRIES) {
+            console.log(`Connection issue (attempt ${retryCount + 1}/${MAX_RETRIES}), retrying in 2 seconds...`, error.message);
+            // DON'T set loading to false - keep skeleton visible during retry
+            // DON'T set error - we're still trying
+            setTimeout(() => {
+              console.log('Retrying module load...');
+              loadModuleContent(access, retryCount + 1);
+            }, 2000);
+            return; // Return WITHOUT throwing - keeps loading state active
+          } else {
+            console.error(`Max retries (${MAX_RETRIES}) reached, giving up`);
+            // After max retries, show error page with retry button
+            throw {
+              message: 'Unable to connect to the server after multiple attempts. Please check your connection and try again.',
+              canRetry: true,
+              originalError: error
+            };
+          }
+        }
+
+        // For non-connection errors, throw to show error page
+        throw error;
+      }
 
       // Set data
       const moduleInfo = moduleResponse.data || moduleResponse;
 
-      // Fetch teacher information if available
+      // Fetch teacher information if available - non-critical, fail gracefully
       if (moduleInfo.teacher_id) {
         try {
           const teacherResponse = await apiClient.get(`/api/users/${moduleInfo.teacher_id}`);
           const teacherData = teacherResponse.data || teacherResponse;
           moduleInfo.teacher_name = teacherData.name || teacherData.email || 'Instructor';
         } catch (err) {
-          console.log('Could not fetch teacher info:', err);
+          console.log('Teacher info not available (non-critical):', err.message || err);
           moduleInfo.teacher_name = 'Instructor';
         }
       }
@@ -396,7 +579,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
       const questionsData = questionsResponse.data || questionsResponse;
       setQuestions(questionsData);
 
-      // Check survey status
+      // Check survey status - non-critical, fail gracefully
       if (access.studentId) {
         try {
           const surveyStatusResponse = await apiClient.get(
@@ -406,7 +589,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
           setSurveyRequired(moduleInfo.survey_required || false);
           console.log('📋 Survey status:', surveyStatusResponse);
         } catch (err) {
-          console.log('No survey status found');
+          console.log('Survey status not available (non-critical):', err.message || err);
           setSurveySubmitted(false);
           setSurveyRequired(moduleInfo.survey_required || false);
         }
@@ -423,13 +606,17 @@ const StudentModuleContent = memo(function StudentModuleContent() {
           setSubmissionStatus(status);
           console.log(`📊 Submission status loaded:`, status);
         } catch (err) {
-          console.log('No submission status found - student hasn\'t submitted yet');
+          // Handle both "not found" and connection errors gracefully
+          console.log('Submission status not available (will retry via polling):', err.message || err);
           status = { current_attempt: 1, submissions: [], can_submit_again: true, all_attempts_done: false };
           setSubmissionStatus(status);
         }
 
-        // Load feedback from database
-        const feedbackMap = await loadFeedbackForAnswers(access);
+        // Load feedback from database - always succeeds, returns empty object on error
+        const feedbackMap = await loadFeedbackForAnswers(access).catch(err => {
+          console.log('Feedback loading failed (will retry via polling):', err);
+          return {}; // Return empty feedback map
+        });
 
         // Determine which attempt to show by default
         // Priority: Use the most recently completed submission (even if feedback is still generating)
@@ -461,24 +648,42 @@ const StudentModuleContent = memo(function StudentModuleContent() {
         // Check if we should start polling (when on feedback tab after submission)
         if (initialTab === 'feedback') {
           const currentAttempt = status?.current_attempt || 1;
+          console.log(`🔍 Checking if polling needed: currentAttempt=${currentAttempt}, tab=${initialTab}`);
+
           if (currentAttempt > 1) {
             // Check feedback status to see if we need to poll
-            const feedbackStatusCheck = await checkFeedbackStatus(access, currentAttempt - 1);
-            if (!feedbackStatusCheck) {
-              // Start polling if not all complete
-              console.log('🚀 Starting polling for feedback generation');
+            try {
+              console.log(`📊 Checking feedback completion status...`);
+              const feedbackStatusCheck = await checkFeedbackStatus(access, currentAttempt - 1);
+              if (!feedbackStatusCheck) {
+                // Start polling if not all complete
+                console.log('🚀 ✅ STARTING POLLING - Feedback is incomplete');
+                setIsPolling(true);
+              } else {
+                console.log('✅ All feedback already complete - no polling needed');
+              }
+            } catch (err) {
+              // If feedback status check fails, just start polling to be safe
+              console.log('⚠️ Feedback status check failed, starting polling anyway:', err);
               setIsPolling(true);
             }
+          } else {
+            console.log('ℹ️ No submission yet (attempt 1) - no polling needed');
           }
         }
       }
 
+      // Clear any previous connection errors if we successfully loaded
+      setError(null);
+      // Set loading to false only on successful load
+      setLoading(false);
+
     } catch (error) {
       console.error('Failed to load module content:', error);
       setError(error);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only set loading false when actually erroring
     }
+    // NOTE: No finally block - we control loading state explicitly
   }, [moduleId, initialTab, loadFeedbackForAnswers, checkFeedbackStatus]);
 
   // Scroll to specific question
@@ -513,59 +718,204 @@ const StudentModuleContent = memo(function StudentModuleContent() {
     if (moduleAccess && moduleData && !consentChecked) {
       // If module doesn't require consent, skip the check entirely
       if (moduleData.consent_required === false) {
-        console.log('Module does not require consent, skipping check');
+        console.log('✅ Module does not require consent, skipping modal');
         setConsentChecked(true);
         return;
       }
 
-      // If consent was already submitted, skip the check
+      // If consent was already submitted in this session, skip the check
       if (moduleAccess.consentSubmitted) {
-        console.log('Consent already submitted during enrollment, skipping check');
+        console.log('✅ Consent already submitted in this session, skipping modal');
         setConsentChecked(true);
         return;
       }
 
-      // Otherwise, check consent status
+      // Check localStorage first (fastest check)
+      const consentKey = `consent_${moduleId}_${moduleAccess.studentId}`;
+      const storedConsent = localStorage.getItem(consentKey);
+      if (storedConsent === 'true') {
+        console.log('✅ Consent found in localStorage, skipping modal');
+        setConsentChecked(true);
+        return;
+      }
+
+      // If not found locally, check with API to verify database state
+      console.log('🔍 Checking consent status from API...');
       checkConsentStatus(moduleAccess);
     }
-  }, [moduleAccess, moduleData, consentChecked, checkConsentStatus]);
+  }, [moduleAccess, moduleData, consentChecked, checkConsentStatus, moduleId]);
+
+  // Store latest callback refs to avoid stale closures
+  const checkFeedbackStatusRef = useRef(checkFeedbackStatus);
+  const loadFeedbackForAnswersRef = useRef(loadFeedbackForAnswers);
+
+  // Update refs when callbacks change
+  useEffect(() => {
+    checkFeedbackStatusRef.current = checkFeedbackStatus;
+    loadFeedbackForAnswersRef.current = loadFeedbackForAnswers;
+  }, [checkFeedbackStatus, loadFeedbackForAnswers]);
 
   // Effect to handle polling when feedback is being generated
   useEffect(() => {
-    if (!isPolling || !moduleAccess) return;
+    if (!isPolling || !moduleAccess || !submissionStatus) {
+      console.log('⏸️ Polling paused:', { isPolling, hasAccess: !!moduleAccess, hasStatus: !!submissionStatus });
+      return;
+    }
 
-    const MAX_POLLS = 40; // Stop after 40 polls (2 minutes)
-    const currentAttempt = submissionStatus?.current_attempt || 1;
-    let currentPollCount = 0;
+    const MAX_POLLS = 180; // Stop after 180 polls (6 minutes at 2s intervals)
+    const currentAttempt = submissionStatus.current_attempt || 1;
 
-    const pollInterval = setInterval(async () => {
-      currentPollCount++;
-      setPollCount(currentPollCount);
+    console.log(`🚀 =====================================`);
+    console.log(`🚀 POLLING STARTED`);
+    console.log(`🚀 Attempt to monitor: ${currentAttempt - 1}`);
+    console.log(`🚀 Module ID: ${moduleId}`);
+    console.log(`🚀 Student ID: ${moduleAccess.studentId}`);
+    console.log(`🚀 =====================================`);
+
+    let pollCount = 0;
+    let pollInterval = null;
+
+    // Polling function - uses latest callbacks via refs
+    const doPoll = async () => {
+      pollCount++;
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`\n🔄 ========== Poll #${pollCount}/${MAX_POLLS} at ${timestamp} ==========`);
+
+      setPollCount(pollCount); // Update UI counter
 
       // Stop polling after max attempts
-      if (currentPollCount >= MAX_POLLS) {
-        console.log('⏱️ Polling timeout - stopping after 2 minutes');
+      if (pollCount >= MAX_POLLS) {
+        console.log('⏱️ Polling timeout - stopping after 6 minutes');
+        if (pollInterval) clearInterval(pollInterval);
         setIsPolling(false);
-        clearInterval(pollInterval);
+
+        // Trigger cleanup for stale feedback
+        try {
+          console.log('🧹 Triggering cleanup for stale feedback...');
+          await apiClient.post(
+            `/api/student/modules/${moduleId}/cleanup-feedback?student_id=${moduleAccess.studentId}`
+          );
+          console.log('✅ Cleanup completed, reloading feedback...');
+          await loadFeedbackForAnswersRef.current(moduleAccess);
+        } catch (error) {
+          console.error('Failed to cleanup stale feedback:', error);
+        }
         return;
       }
 
-      const allComplete = await checkFeedbackStatus(moduleAccess, currentAttempt - 1); // Poll for previous attempt
+      // Check feedback status and load new feedback using latest callback via ref
+      try {
+        console.log(`📞 Calling checkFeedbackStatus (via ref)...`);
+        const allComplete = await checkFeedbackStatusRef.current(moduleAccess, currentAttempt - 1);
 
-      if (allComplete) {
-        clearInterval(pollInterval);
-        setPollCount(0);
+        if (allComplete) {
+          console.log(`🎉 ========== ALL FEEDBACK COMPLETE! ==========`);
+          if (pollInterval) clearInterval(pollInterval);
+          setIsPolling(false);
+          setPollCount(0);
+        } else {
+          console.log(`⏳ Still generating... (${pollCount}/${MAX_POLLS})`);
+        }
+      } catch (error) {
+        console.log(`⚠️ Poll #${pollCount} failed (will retry):`, error.message);
+        // Don't stop polling on errors, just continue
       }
-    }, 3000); // Poll every 3 seconds
+    };
 
+    // Start polling immediately, then every 2 seconds
+    console.log('▶️ Executing first poll NOW...');
+    doPoll(); // First poll happens immediately
+
+    pollInterval = setInterval(() => {
+      doPoll();
+    }, 2000); // Then poll every 2 seconds
+
+    // Cleanup function
     return () => {
-      clearInterval(pollInterval);
+      console.log('🛑 ===== STOPPING POLLING INTERVAL =====');
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       setPollCount(0);
     };
-  }, [isPolling, moduleAccess, submissionStatus, checkFeedbackStatus]);
+  }, [isPolling, moduleAccess, submissionStatus, moduleId]); // Minimal deps to avoid recreating interval
 
   const handleStartTest = () => {
     router.push(`/student/test/${moduleId}`);
+  };
+
+  const handleManualCleanup = async () => {
+    if (!moduleAccess) return;
+
+    setCleaningUp(true);
+    try {
+      console.log('🧹 Manual cleanup triggered...');
+      const response = await apiClient.post(
+        `/api/student/modules/${moduleId}/cleanup-feedback?student_id=${moduleAccess.studentId}`
+      );
+
+      const result = response?.data || response || {};
+      console.log('✅ Cleanup completed:', result);
+      console.log(`   - Marked ${result.marked_failed || 0} as failed`);
+      console.log(`   - Created ${result.created_placeholders || 0} placeholder rows`);
+      console.log(`   - Total fixed: ${result.total_fixed || 0}`);
+
+      // Reload feedback to show retry buttons
+      await loadFeedbackForAnswers(moduleAccess);
+
+      // Stop polling if active
+      setIsPolling(false);
+
+      // Show alert with results
+      if (result.total_fixed > 0) {
+        alert(`Found ${result.total_fixed} feedback generation failures. Use "Regenerate All" button to retry them all at once.`);
+      } else {
+        alert('No failed feedback found. All feedback is either completed or still generating.');
+      }
+    } catch (error) {
+      console.error('Failed to cleanup feedback:', error);
+      alert('Failed to cleanup feedback. Please check the browser console for details.');
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
+  const handleRegenerateAll = async () => {
+    if (!moduleAccess || !submissionStatus) return;
+
+    setRegeneratingAll(true);
+    try {
+      const currentAttempt = selectedAttempt || 1;
+      console.log(`🔄 Regenerating all failed feedback for attempt ${currentAttempt}...`);
+
+      const response = await apiClient.post(
+        `/api/ai-feedback/retry/module/${moduleId}?student_id=${moduleAccess.studentId}&attempt=${currentAttempt}`
+      );
+
+      const result = response?.data || response || {};
+      console.log('✅ Regenerate all initiated:', result);
+      console.log(`   - Total answers: ${result.total_answers || 0}`);
+      console.log(`   - Failed/missing feedback: ${result.answers_retried || 0}`);
+      console.log(`   - Message: ${result.message || 'N/A'}`);
+
+      if (result.success && result.answers_retried > 0) {
+        alert(`${result.message || `Started regenerating ${result.answers_retried} failed/missing feedback. This may take a few minutes. The page will update automatically.`}`);
+
+        // Start polling again to show progress
+        setIsPolling(true);
+        setPollCount(0);
+      } else if (result.success && result.answers_retried === 0) {
+        alert(result.message || 'No failed feedback found to retry. All feedback is either completed or still generating.');
+      } else {
+        alert('No feedback needed to be retried.');
+      }
+    } catch (error) {
+      console.error('Failed to regenerate all feedback:', error);
+      const errorMsg = error.response?.data?.detail || error.message || 'Unknown error';
+      alert(`Failed to regenerate feedback: ${errorMsg}. Please try again or contact support.`);
+    } finally {
+      setRegeneratingAll(false);
+    }
   };
 
   const handleViewDocument = (doc) => {
@@ -589,6 +939,11 @@ const StudentModuleContent = memo(function StudentModuleContent() {
     a.click();
     document.body.removeChild(a);
   };
+
+  // Don't render anything on server to prevent fetch errors during SSR
+  if (!isClient) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -1102,69 +1457,68 @@ const StudentModuleContent = memo(function StudentModuleContent() {
 
           {/* Feedback Tab */}
           <TabsContent value="feedback" className="space-y-6">
-            {/* Show loading banner if feedback is being generated */}
+            {/* Show beautiful loading banner when actively generating feedback */}
             {isPolling && feedbackStatus && (
-              <Card className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                        Generating Your Feedback...
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {feedbackStatus.feedback_ready} of {feedbackStatus.total_questions} feedback generated ({feedbackStatus.progress_percentage}%)
-                      </p>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${feedbackStatus.progress_percentage}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <FeedbackGeneratingBanner
+                feedbackStatus={feedbackStatus}
+                pollCount={pollCount}
+              />
             )}
 
             {isPolling && Object.keys(feedbackData).length === 0 ? (
-              <Card className="text-center py-12">
+              <Card>
                 <CardContent>
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 dark:border-blue-400 mx-auto mb-6"></div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    Generating Your Feedback...
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    Please wait while we analyze your answers. This may take a few moments.
-                  </p>
-                  {feedbackStatus && (
-                    <p className="text-sm text-blue-600 dark:text-blue-400">
-                      {feedbackStatus.feedback_ready} of {feedbackStatus.total_questions} feedback generated
-                    </p>
-                  )}
+                  <AllQuestionsLoader totalQuestions={feedbackStatus?.total_questions || 10} />
                 </CardContent>
               </Card>
             ) : Object.keys(feedbackData).length > 0 ? (
               <>
-                {/* Attempt Selector */}
-                {Object.keys(feedbackByAttempt).length > 1 && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">View Attempt:</span>
-                    <div className="flex gap-2">
-                      {Object.keys(feedbackByAttempt).sort((a, b) => Number(a) - Number(b)).map(attemptNum => (
-                        <Button
-                          key={attemptNum}
-                          onClick={() => setSelectedAttempt(Number(attemptNum))}
-                          variant={selectedAttempt === Number(attemptNum) ? "default" : "outline"}
-                          size="sm"
-                          className={selectedAttempt === Number(attemptNum) ? "bg-blue-600 hover:bg-blue-700" : ""}
-                        >
-                          Attempt {attemptNum}
-                        </Button>
-                      ))}
+                {/* Attempt Selector - Only show attempts that have AI feedback OR teacher grades */}
+                {(() => {
+                  const maxAttempts = submissionStatus?.max_attempts || 2;
+
+                  // Filter attempts to show: only include final attempts if they have teacher grades
+                  const visibleAttempts = Object.keys(feedbackByAttempt)
+                    .filter(attemptNum => {
+                      const attemptNumber = Number(attemptNum);
+                      const isFinalAttempt = attemptNumber >= maxAttempts;
+
+                      // If it's a final attempt, only show if it has teacher grades
+                      if (isFinalAttempt) {
+                        const attemptFeedback = feedbackByAttempt[attemptNum];
+                        const hasTeacherGrade = Object.values(attemptFeedback).some(f => f.teacher_grade);
+                        return hasTeacherGrade;
+                      }
+
+                      // Non-final attempts are always shown
+                      return true;
+                    })
+                    .sort((a, b) => Number(a) - Number(b));
+
+                  // Only show selector if there are multiple visible attempts
+                  if (visibleAttempts.length <= 1) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">View Attempt:</span>
+                      <div className="flex gap-2">
+                        {visibleAttempts.map(attemptNum => (
+                          <Button
+                            key={attemptNum}
+                            onClick={() => setSelectedAttempt(Number(attemptNum))}
+                            variant={selectedAttempt === Number(attemptNum) ? "default" : "outline"}
+                            size="sm"
+                            className={selectedAttempt === Number(attemptNum) ? "bg-blue-600 hover:bg-blue-700" : ""}
+                          >
+                            Attempt {attemptNum}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Teacher Grades Available Banner */}
                 {(() => {
@@ -1211,19 +1565,63 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                   return null;
                 })()}
 
-                {/* Summary Card */}
-                <Card className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center">
-                          <Brain className="w-8 h-8 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                            Feedback for Attempt {selectedAttempt}
-                          </h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {/* Check if this is final attempt and has no teacher grade - show waiting message */}
+                {(() => {
+                  const maxAttempts = submissionStatus?.max_attempts || 2;
+                  const isFinalAttempt = selectedAttempt >= maxAttempts;
+                  const hasTeacherGradeInThisAttempt = Object.values(feedbackData).some(f => f.teacher_grade);
+
+                  if (isFinalAttempt && !hasTeacherGradeInThisAttempt) {
+                    return (
+                      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border-2 border-purple-300 dark:border-purple-700">
+                        <CardContent className="p-8 text-center">
+                          <div className="flex flex-col items-center gap-4">
+                            <div className="w-20 h-20 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                              <User className="w-10 h-10 text-purple-600 dark:text-purple-400" />
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-bold text-purple-900 dark:text-purple-100 mb-2">
+                                Final Attempt - Teacher Grading Only
+                              </h3>
+                              <p className="text-purple-700 dark:text-purple-300 mb-1">
+                                This is your final attempt and is reserved for manual grading by your teacher. AI feedback is only available for attempts 1-{maxAttempts - 1}.
+                              </p>
+                              <p className="text-sm text-purple-600 dark:text-purple-400 mt-4">
+                                Your teacher will manually grade this attempt. Check back later for feedback.
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Summary Card - Only show if NOT final attempt OR has teacher grade */}
+                {(() => {
+                  const maxAttempts = submissionStatus?.max_attempts || 2;
+                  const isFinalAttempt = selectedAttempt >= maxAttempts;
+                  const hasTeacherGradeInThisAttempt = Object.values(feedbackData).some(f => f.teacher_grade);
+
+                  // Don't show feedback if it's final attempt with no teacher grade
+                  if (isFinalAttempt && !hasTeacherGradeInThisAttempt) {
+                    return null;
+                  }
+
+                  return (
+                    <Card className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center">
+                              <Brain className="w-8 h-8 text-white" />
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                                Feedback for Attempt {selectedAttempt}
+                              </h3>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                             {(() => {
                               // Count correct answers, prioritizing teacher grades over AI feedback
                               const correctCount = Object.values(feedbackData).filter(f => {
@@ -1255,16 +1653,14 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                 // Use teacher's points
                                 totalPointsEarned += f.teacher_grade.points_awarded || 0;
                                 totalPointsPossible += f.points_possible || 0;
-                              } else if (f.correctness_score !== null && f.correctness_score !== undefined) {
-                                // Use AI's score - convert percentage to points
+                              } else {
+                                // Use AI's score - try correctness_score first, then score as fallback
+                                const scoreValue = f.correctness_score !== null && f.correctness_score !== undefined
+                                  ? f.correctness_score
+                                  : (f.score !== null && f.score !== undefined ? f.score : 0);
+
                                 const pointsPossible = f.points_possible || 1;
-                                const score = f.correctness_score > 1 ? f.correctness_score / 100 : f.correctness_score;
-                                totalPointsEarned += score * pointsPossible;
-                                totalPointsPossible += pointsPossible;
-                              } else if (f.score !== null && f.score !== undefined) {
-                                // Fallback to score field
-                                const pointsPossible = f.points_possible || 1;
-                                const score = f.score > 1 ? f.score / 100 : f.score;
+                                const score = scoreValue > 1 ? scoreValue / 100 : scoreValue;
                                 totalPointsEarned += score * pointsPossible;
                                 totalPointsPossible += pointsPossible;
                               }
@@ -1277,6 +1673,73 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">Progress on Attempt {selectedAttempt}</p>
                       </div>
                     </div>
+
+                    {/* Show message for final attempt (teacher grading only, no AI feedback) */}
+                    {selectedAttempt >= (submissionStatus?.max_attempts || 2) && (
+                      <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <User className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                              Final Attempt - Teacher Grading Only
+                            </p>
+                            <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">
+                              This is your final attempt and is reserved for manual grading by your teacher. AI feedback is only available for attempts 1-{(submissionStatus?.max_attempts || 2) - 1}.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Show regenerate all button if there are failed feedback */}
+                    {(() => {
+                      // Only count TRULY failed feedback (must have explicit failed/timeout status)
+                      const failedCount = Object.values(feedbackData).filter(f => {
+                        return f && f.generation_status && (f.generation_status === 'failed' || f.generation_status === 'timeout');
+                      }).length;
+
+                      // Get max attempts to check if this attempt should have AI feedback
+                      const maxAttempts = submissionStatus?.max_attempts || 2;
+
+                      // IMPORTANT: Only show regenerate button when:
+                      // 1. There are actually failed feedbacks (not pending/generating)
+                      // 2. This is not the final attempt (final attempt is for teacher grading)
+                      // 3. NOT currently polling (if polling, feedback is still being generated)
+                      if (failedCount === 0 || selectedAttempt >= maxAttempts || isPolling) return null;
+
+                      return (
+                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="font-medium text-red-900 dark:text-red-100">
+                                {failedCount} feedback generation{failedCount > 1 ? 's' : ''} failed
+                              </p>
+                              <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                                Some feedback failed to generate. Use this button to retry all failed items at once
+                              </p>
+                            </div>
+                            <Button
+                              onClick={handleRegenerateAll}
+                              disabled={regeneratingAll}
+                              size="sm"
+                              variant="destructive"
+                            >
+                              {regeneratingAll ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b border-white mr-2"></div>
+                                  Regenerating...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="mr-2 h-4 w-4" />
+                                  Regenerate All ({failedCount})
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Show retry button if there are incorrect answers and not all attempts done */}
                     {(() => {
@@ -1369,8 +1832,21 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                     })()}
                   </CardContent>
                 </Card>
+              );
+            })()}
 
-                {/* Individual Question Feedback with Navigation */}
+                {/* Individual Question Feedback with Navigation - Only show if NOT final attempt OR has teacher grade */}
+                {(() => {
+                  const maxAttempts = submissionStatus?.max_attempts || 2;
+                  const isFinalAttempt = selectedAttempt >= maxAttempts;
+                  const hasTeacherGradeInThisAttempt = Object.values(feedbackData).some(f => f.teacher_grade);
+
+                  // Don't show question feedback if it's final attempt with no teacher grade
+                  if (isFinalAttempt && !hasTeacherGradeInThisAttempt) {
+                    return null;
+                  }
+
+                  return (
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
                   {/* Question Navigation Sidebar */}
                   <div className="lg:col-span-1">
@@ -1452,6 +1928,25 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                       const feedback = feedbackData[question.id];
                       const isAnswered = answeredQuestions[question.id];
 
+                      // Debug logging for feedback state
+                      if (index < 3) { // Only log first 3 questions to avoid spam
+                        console.log(`📋 Q${index + 1} (ID: ${question.id}):`, {
+                          hasFeedback: !!feedback,
+                          status: feedback?.generation_status,
+                          hasExplanation: !!feedback?.explanation,
+                          hasScore: feedback?.correctness_score !== undefined,
+                          isCorrect: feedback?.is_correct,
+                          feedbackKeys: feedback ? Object.keys(feedback).join(', ') : 'no feedback',
+                        });
+                      }
+
+                      // Log ALL question IDs vs feedbackData keys on first question
+                      if (index === 0) {
+                        console.log('🔑 All Question IDs:', questions.map(q => q.id));
+                        console.log('🔑 FeedbackData Keys:', Object.keys(feedbackData));
+                        console.log('🔑 Do they match?', questions.every(q => feedbackData[q.id] !== undefined));
+                      }
+
                       return (
                         <Card
                           key={question.id}
@@ -1475,6 +1970,17 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                     }
 
                                     if (!feedback) {
+                                      // IMPORTANT: For final attempt (teacher grading only), always show waiting badge
+                                      const maxAttempts = submissionStatus?.max_attempts || 2;
+                                      if (selectedAttempt >= maxAttempts) {
+                                        return (
+                                          <Badge variant="secondary" className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                            <User className="w-3 h-3 mr-1" />
+                                            Awaiting Teacher Grading
+                                          </Badge>
+                                        );
+                                      }
+
                                       // If there are teacher grades in this attempt, show waiting badge
                                       if (hasTeacherGradesInAttempt) {
                                         return (
@@ -1485,7 +1991,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                         );
                                       }
 
-                                      // Otherwise show AI generation status
+                                      // Otherwise show AI generation status (only for non-final attempts)
                                       if (isPolling) {
                                         return (
                                           <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
@@ -1530,7 +2036,7 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                               ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
                                               : "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300"
                                           }>
-                                            Progress: {Math.round(feedback.score > 1 ? feedback.score : feedback.score * 100)}%
+                                            Progress: {Math.round((feedback.correctness_score || feedback.score || 0) > 1 ? (feedback.correctness_score || feedback.score) : (feedback.correctness_score || feedback.score) * 100)}%
                                           </Badge>
                                         </>
                                       ) : null}
@@ -1569,22 +2075,25 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
-                            {isPolling && !feedback && isAnswered ? (
-                              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-8 rounded-lg text-center border border-blue-200 dark:border-blue-800">
-                                <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 dark:border-blue-400 mx-auto mb-4"></div>
-                                <p className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                                  🤖 AI is analyzing your answer...
-                                </p>
-                                <p className="text-sm text-blue-700 dark:text-blue-300">
-                                  Generating personalized feedback for you. This may take a moment.
-                                </p>
-                                {pollCount > 10 && (
-                                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-3 animate-pulse">
-                                    Still working on it... Complex answers take a bit longer
-                                  </p>
-                                )}
-                              </div>
-                            ) : !isAnswered ? (
+                            {/* Show generation status indicator ONLY for failed/timeout states */}
+                            {/* IMPORTANT: Don't show for pending/generating - those use the loader below */}
+                            {feedback && feedback.generation_status && (feedback.generation_status === 'failed' || feedback.generation_status === 'timeout') && selectedAttempt < (submissionStatus?.max_attempts || 2) && (
+                              <FeedbackStatusIndicator
+                                answerId={feedback.answer_id}
+                                hasFeedback={false}
+                                initialStatus={feedback.generation_status}
+                                onFeedbackComplete={async () => {
+                                  // Reload feedback when generation completes
+                                  if (moduleAccess) {
+                                    await loadFeedbackForAnswers(moduleAccess);
+                                  }
+                                }}
+                              />
+                            )}
+
+                            {/* IMPORTANT: Show feedback as soon as it's ready, even if still polling for other questions */}
+                            {/* Only show loader if feedback is genuinely not ready yet (pending/generating/missing) */}
+                            {!isAnswered ? (
                               <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg text-center">
                                 <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                                 <p className="text-gray-600 dark:text-gray-400 font-medium">
@@ -1594,7 +2103,23 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                   You did not submit an answer for this question in your attempt.
                                 </p>
                               </div>
-                            ) : feedback ? (
+                            ) : selectedAttempt >= (submissionStatus?.max_attempts || 2) && !feedback?.teacher_grade ? (
+                              // Final attempt with no teacher grade yet - show waiting message
+                              <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-6 text-center">
+                                <User className="w-12 h-12 text-purple-600 dark:text-purple-400 mx-auto mb-3" />
+                                <p className="text-purple-900 dark:text-purple-100 font-medium">
+                                  Awaiting Teacher Grading
+                                </p>
+                                <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
+                                  Your teacher will manually grade this attempt. Check back later for feedback.
+                                </p>
+                              </div>
+                            ) : feedback && (
+                              feedback.generation_status === 'completed' ||
+                              feedback.explanation ||
+                              feedback.is_correct !== undefined ||
+                              feedback.correctness_score !== undefined
+                            ) ? (
                               <>
                                 {/* Your Answer - MCQ */}
                                 {question.type === 'mcq' && feedback.selected_option && (
@@ -1937,57 +2462,49 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                                   />
                                 )}
                               </>
-                            ) : isAnswered ? (
-                              <div className="flex items-center justify-center py-12">
-                                <div className="text-center">
-                                  {(() => {
-                                    // Check if any question in this attempt has teacher grades
-                                    const hasTeacherGradesInAttempt = Object.values(feedbackData).some(f => f.teacher_grade);
-
-                                    // If there are teacher grades in this attempt, show waiting message
-                                    if (hasTeacherGradesInAttempt) {
-                                      return (
-                                        <>
-                                          <User className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                                          <p className="text-gray-900 dark:text-gray-100 font-medium mb-2">Awaiting Teacher Grading</p>
-                                          <p className="text-sm text-gray-600 dark:text-gray-400">Your teacher will review and grade this question soon.</p>
-                                        </>
-                                      );
-                                    }
-
-                                    // Otherwise show AI feedback generation status
-                                    if (pollCount >= 40) {
-                                      return (
-                                        <>
-                                          <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-                                          <p className="text-gray-600 dark:text-gray-400 mb-2">Feedback generation is taking longer than expected</p>
-                                          <p className="text-sm text-gray-500 dark:text-gray-500">Please refresh the page or check back later</p>
-                                        </>
-                                      );
-                                    }
-
-                                    return (
-                                      <>
-                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-                                        <p className="text-gray-600 dark:text-gray-400">Generating feedback for this question...</p>
-                                        {pollCount > 10 && (
-                                          <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">This may take a minute...</p>
-                                        )}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
                             ) : (
-                              <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg text-center">
-                                <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                                <p className="text-gray-600 dark:text-gray-400 font-medium">
-                                  No answer provided for this question
-                                </p>
-                                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-                                  You did not submit an answer for this question in your attempt.
-                                </p>
-                              </div>
+                              // Check if feedback is truly not ready yet vs failed
+                              (() => {
+                                // If no feedback exists at all, show loader
+                                if (!feedback) {
+                                  return (
+                                    <QuestionFeedbackLoader
+                                      questionNumber={index + 1}
+                                      isAnswered={isAnswered}
+                                    />
+                                  );
+                                }
+
+                                // If feedback exists but is pending/generating, show loader
+                                if (feedback.generation_status === 'pending' || feedback.generation_status === 'generating') {
+                                  return (
+                                    <QuestionFeedbackLoader
+                                      questionNumber={index + 1}
+                                      isAnswered={isAnswered}
+                                    />
+                                  );
+                                }
+
+                                // If failed/timeout, FeedbackStatusIndicator shows above (return nothing)
+                                if (feedback.generation_status === 'failed' || feedback.generation_status === 'timeout') {
+                                  return null;
+                                }
+
+                                // Unknown state - show debug info
+                                return (
+                                  <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6 text-center">
+                                    <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-3" />
+                                    <p className="text-yellow-900 dark:text-yellow-100 font-medium">
+                                      Feedback exists but in unexpected state
+                                    </p>
+                                    <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                                      Status: {feedback.generation_status || 'not set'}<br />
+                                      Has explanation: {feedback.explanation ? 'yes' : 'no'}<br />
+                                      Please refresh the page.
+                                    </p>
+                                  </div>
+                                );
+                              })()
                             )}
                           </CardContent>
                         </Card>
@@ -1995,6 +2512,8 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                     })}
                   </div>
                 </div>
+              );
+            })()}
               </>
             ) : (
               <Card className="text-center py-12">

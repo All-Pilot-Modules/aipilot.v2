@@ -1,36 +1,77 @@
 import { jwtDecode } from 'jwt-decode';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Remove trailing slash from API_BASE_URL to prevent double slashes
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // Helper function to add timeout to fetch requests with proper abort handling
-const fetchWithTimeout = async (url, options = {}, timeout = 10000) => {
-  // Ensure we're in a browser environment
-  if (typeof window === 'undefined') {
-    throw new Error('fetch can only be used in browser environment');
-  }
+const fetchWithTimeout = async (url, options = {}, timeout = 30000) => {
+  // Declare variables outside try block so catch can access them
+  let timeoutId;
+  let startTime = Date.now();
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
+  // CRITICAL: Prevent ANY execution during SSR
+  // Wrap entire function in try-catch to catch all SSR issues
   try {
+    // Multiple layers of SSR detection
+    if (typeof window === 'undefined') {
+      throw new Error('SSR: window undefined');
+    }
+    if (typeof fetch === 'undefined') {
+      throw new Error('SSR: fetch undefined');
+    }
+    if (typeof AbortController === 'undefined') {
+      throw new Error('SSR: AbortController undefined');
+    }
+
+    // Extra check for document (only exists in browser)
+    if (typeof document === 'undefined') {
+      throw new Error('SSR: document undefined');
+    }
+
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeout);
+
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
+      // Ensure we're not caching failed requests
+      cache: 'no-store',
     });
-    clearTimeout(timeoutId);
+
+    if (timeoutId) clearTimeout(timeoutId);
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
+    const elapsedTime = Date.now() - startTime;
 
-    // Handle different error types
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout - please check your connection');
+    // Handle SSR errors gracefully - don't crash the app
+    if (error.message?.includes('SSR:')) {
+      // Silent fail during SSR - this is expected
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[fetchWithTimeout] SSR detected, skipping fetch');
+      }
+      throw error; // Let the calling code handle it
     }
 
-    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      throw new Error('Cannot connect to server. Please ensure the backend is running.');
+    // Log error details (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[fetchWithTimeout] Error:', {
+        url: url.replace(API_BASE_URL, ''),
+        error: error.message,
+        type: error.name,
+        time: `${elapsedTime}ms`
+      });
     }
 
+    // Handle abort/timeout errors
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[fetchWithTimeout] Timeout after ${elapsedTime}ms`);
+      }
+      throw error;
+    }
+
+    // For all other errors, re-throw them
     throw error;
   }
 };
@@ -423,7 +464,16 @@ export const apiClient = {
       ...options,
     };
 
-    const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, config, 15000);
+    // Dynamic timeout based on endpoint type
+    let timeout = 15000; // Default: 15 seconds
+
+    if (endpoint.includes('/feedback') || endpoint.includes('/cleanup-feedback') || endpoint.includes('/feedback-status')) {
+      timeout = 8000; // Feedback endpoints: 8 seconds (fail fast, retry via polling)
+    } else if (endpoint.includes('/submit-test')) {
+      timeout = 30000; // Test submission: 30 seconds (may trigger AI feedback generation)
+    }
+
+    const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, config, timeout);
 
     if (!response.ok) {
       if (response.status === 401) {

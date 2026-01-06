@@ -89,8 +89,9 @@ def generate_feedback_background(student_id: str, module_id: str, attempt: int, 
         start_time = time.time()
 
         # Use ThreadPoolExecutor to generate feedback in parallel
-        # Max workers = min(10, number of questions) to avoid overwhelming the API
-        max_workers = min(10, len(answer_ids))
+        # Max workers = min(3, number of questions) to avoid database connection exhaustion
+        # IMPORTANT: Reduced from 10 to 3 to prevent Supabase connection pool exhaustion
+        max_workers = min(3, len(answer_ids))
         logger.info(f"🚀 Using {max_workers} parallel threads for feedback generation")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1048,21 +1049,25 @@ def get_feedback_status(
             "all_complete": True
         }
 
-    # Check which answers have feedback
+    # Check which answers have feedback COMPLETED (not just existing)
     feedback_status = []
     ready_count = 0
 
     for answer in answers:
         feedback = get_feedback_by_answer(db, answer.id)
-        has_feedback = feedback is not None
+        # IMPORTANT: Only count as ready if generation_status is "completed"
+        # Don't count "pending", "generating", "failed", or "timeout" as ready
+        is_completed = feedback is not None and feedback.generation_status == 'completed'
 
-        if has_feedback:
+        if is_completed:
             ready_count += 1
 
         feedback_status.append({
             "question_id": str(answer.question_id),
             "answer_id": str(answer.id),
-            "has_feedback": has_feedback,
+            "has_feedback": feedback is not None,
+            "is_completed": is_completed,
+            "generation_status": feedback.generation_status if feedback else None,
             "feedback_id": str(feedback.id) if feedback else None
         })
 
