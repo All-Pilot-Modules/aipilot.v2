@@ -2094,9 +2094,14 @@ const StudentModuleContent = memo(function StudentModuleContent() {
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
-                            {/* Show generation status indicator ONLY for failed/timeout states */}
-                            {/* IMPORTANT: Don't show for pending/generating - those use the loader below */}
-                            {feedback && feedback.generation_status && (feedback.generation_status === 'failed' || feedback.generation_status === 'timeout') && selectedAttempt < (submissionStatus?.max_attempts || 2) && (
+                            {/* Show generation status indicator ONLY for truly failed states */}
+                            {/* IMPORTANT: Only show if feedback EXISTS AND is explicitly failed/timeout */}
+                            {/* Don't show if feedback doesn't exist - that's just pending, not failed */}
+                            {feedback &&
+                             feedback.generation_status &&
+                             (feedback.generation_status === 'failed' || feedback.generation_status === 'timeout') &&
+                             feedback.can_retry &&
+                             selectedAttempt < (submissionStatus?.max_attempts || 2) && (
                               <FeedbackStatusIndicator
                                 answerId={feedback.answer_id}
                                 hasFeedback={false}

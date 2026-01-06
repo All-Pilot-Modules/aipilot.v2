@@ -1,4 +1,5 @@
 steps:
+  # Step 1: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -9,14 +10,51 @@ steps:
       - '-f'
       - 'Backend/Dockerfile'
       - 'Backend'
+
+  # Step 2: Push image with commit SHA
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
       - 'gcr.io/$PROJECT_ID/ai-pilot-backend:$COMMIT_SHA'
+
+  # Step 3: Push latest tag
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
       - 'gcr.io/$PROJECT_ID/ai-pilot-backend:latest'
+
+  # Step 4: Deploy to Cloud Run (UNCOMMENT AND CONFIGURE BELOW)
+  # Uncomment this step after setting up environment variables in Cloud Run console
+  # or Secret Manager. See DEPLOYMENT_GUIDE.md for instructions.
+  #
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: gcloud
+  #   args:
+  #     - 'run'
+  #     - 'deploy'
+  #     - 'ai-pilot-backend'  # Your Cloud Run service name
+  #     - '--image=gcr.io/$PROJECT_ID/ai-pilot-backend:$COMMIT_SHA'
+  #     - '--region=us-central1'  # Change to your region
+  #     - '--platform=managed'
+  #     - '--allow-unauthenticated'
+  #     - '--port=8080'
+  #     - '--timeout=300'
+  #     - '--memory=2Gi'
+  #     - '--cpu=2'
+  #     # Environment variables - Set these via Cloud Run console or uncomment below
+  #     # WARNING: Don't commit secrets in this file! Use Secret Manager instead.
+  #     # See: https://cloud.google.com/run/docs/configuring/secrets
+  #     #
+  #     # Option 1: Direct environment variables (NOT RECOMMENDED for secrets)
+  #     # - '--set-env-vars=ENV=production'
+  #     # - '--set-env-vars=FRONTEND_URL=https://your-frontend.com'
+  #     #
+  #     # Option 2: Use Secret Manager (RECOMMENDED)
+  #     # - '--set-secrets=OPENAI_API_KEY=openai-api-key:latest'
+  #     # - '--set-secrets=DATABASE_URL=database-url:latest'
+  #     # - '--set-secrets=JWT_SECRET=jwt-secret:latest'
+  #     # - '--set-secrets=SUPABASE_URL=supabase-url:latest'
+  #     # - '--set-secrets=SUPABASE_SERVICE_KEY=supabase-service-key:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/ai-pilot-backend:$COMMIT_SHA'

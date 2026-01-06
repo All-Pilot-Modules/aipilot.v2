@@ -37,10 +37,13 @@ export function useFeedbackPolling(answerId, enabled = true, pollInterval = 2000
       );
 
       if (!response.ok) {
-        // If feedback not found yet, keep polling
+        // If feedback not found yet (404), it's just pending - NOT an error
+        // This is normal during initial generation
         if (response.status === 404) {
           setStatus('pending');
           setProgress(0);
+          setError(null); // Clear any previous errors
+          setCanRetry(false); // Can't retry something that hasn't started
           return;
         }
         throw new Error(`Failed to fetch feedback status: ${response.statusText}`);
@@ -184,6 +187,8 @@ export function useFeedbackPolling(answerId, enabled = true, pollInterval = 2000
     maxRetries,
     isGenerating: status === 'generating' || status === 'pending',
     isCompleted: status === 'completed',
-    isFailed: status === 'failed' || status === 'timeout',
+    // Only consider it failed if status is explicitly failed/timeout AND canRetry is true
+    // This prevents showing "failed" for pending states
+    isFailed: (status === 'failed' || status === 'timeout') && canRetry,
   };
 }

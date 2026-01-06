@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-# Load .env file
+# Load .env file if it exists (local development)
+# In Cloud Run, environment variables are set via deployment config
 load_dotenv()
 
 # === Environment Variables ===
@@ -38,7 +39,11 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # === Environment Variable Validation ===
 def validate_required_env_vars():
-    """Validate that all required environment variables are set."""
+    """Validate that all required environment variables are set.
+
+    This function checks for critical environment variables needed for the app to function.
+    Call this during app startup, not at module import time, to allow health checks to work.
+    """
     missing_vars = []
 
     if not OPENAI_API_KEY:
@@ -53,17 +58,28 @@ def validate_required_env_vars():
         missing_vars.append("SUPABASE_SERVICE_KEY")
 
     if missing_vars:
-        raise ValueError(
-            f"Missing required environment variables: {', '.join(missing_vars)}\n"
-            "Please check your .env file and ensure all required variables are set."
+        error_msg = (
+            f"❌ Missing required environment variables: {', '.join(missing_vars)}\n\n"
+            f"For local development:\n"
+            f"  - Check your .env file in Backend/ directory\n"
+            f"  - Ensure all variables are set correctly\n\n"
+            f"For Cloud Run deployment:\n"
+            f"  - Set environment variables in Cloud Run console\n"
+            f"  - Or use: gcloud run services update SERVICE_NAME --set-env-vars='KEY=VALUE'\n"
+            f"  - Or add them to cloudbuild.yaml deployment step\n"
         )
+        raise ValueError(error_msg)
 
-# Validate on import
-validate_required_env_vars()
+# IMPORTANT: Don't validate at import time!
+# This allows the app to start and respond to health checks even if env vars are temporarily missing
+# Validation will happen during app startup event in main.py
 
-# Optional print to confirm it's loaded (for debug)
-print("ENV loaded:", ENV)
-print("OpenAI Key loaded:", OPENAI_API_KEY[:5] if OPENAI_API_KEY else "NOT SET", "...")
+# Optional debug print (only shows first 5 chars for security)
+print(f"🔧 Environment: {ENV}")
+print(f"🔑 OpenAI Key: {'✅ Set' if OPENAI_API_KEY else '❌ NOT SET'}")
+print(f"🗄️  Database: {'✅ Set' if DATABASE_URL else '❌ NOT SET'}")
+print(f"🔐 JWT Secret: {'✅ Set' if JWT_SECRET else '❌ NOT SET'}")
+print(f"☁️  Supabase: {'✅ Set' if SUPABASE_URL and SUPABASE_SERVICE_KEY else '❌ NOT SET'}")
 
 # === CORS Setup ===
 def add_cors(app: FastAPI):

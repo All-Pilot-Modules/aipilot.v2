@@ -75,8 +75,9 @@ export function FeedbackStatusIndicator({ answerId, hasFeedback, onFeedbackCompl
     );
   }
 
-  // Show error and retry button if failed
-  if (isFailed) {
+  // Show error and retry button ONLY if truly failed (not just pending)
+  // Don't show error for pending state - that's normal during initial generation
+  if (isFailed && canRetry) {
     return (
       <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
         <div className="flex items-start gap-3">

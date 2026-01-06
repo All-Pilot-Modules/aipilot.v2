@@ -69,11 +69,28 @@ app.include_router(feedback_router, prefix="/api/ai-feedback", tags=["AI Feedbac
 # 🚀 Startup event to create all tables and import all models
 @app.on_event("startup")
 def on_startup():
+    print("🚀 App startup initiated...")
+
+    # ✅ Validate environment variables before proceeding
+    from app.core.config import validate_required_env_vars
+    try:
+        validate_required_env_vars()
+        print("✅ All required environment variables are set")
+    except ValueError as e:
+        print(f"\n{'='*80}")
+        print(f"⚠️  STARTUP ERROR: Environment Variables Missing")
+        print(f"{'='*80}")
+        print(str(e))
+        print(f"{'='*80}\n")
+        # Re-raise to prevent app from starting with missing config
+        raise
+
     # ✅ Ensure all models are imported for table creation
     from app.models import user, document, question, module, student_answer, student_enrollment, survey_response, question_queue, document_chunk, document_embedding, ai_feedback, chat_conversation, chat_message
-    print("🚀 App started! Creating tables...")
+    print("📊 Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("✅ All tables created successfully (including student_enrollments, survey_responses, ai_feedback and chat tables)")
+    print("🎉 Application startup complete!")
 
 # 📎 Test route
 @app.get("/")
