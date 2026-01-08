@@ -79,13 +79,13 @@ const StudentModuleContent = memo(function StudentModuleContent() {
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // Sync activeTab with URL parameter changes (important for redirects)
+  // Only sync when URL changes, not when activeTab changes (to prevent race condition)
   useEffect(() => {
     const tabParam = searchParams.get('tab') || 'assignments';
-    if (tabParam !== activeTab) {
-      console.log(`🔄 Tab changed via URL: ${activeTab} → ${tabParam}`);
-      setActiveTab(tabParam);
-    }
-  }, [searchParams, activeTab]);
+    console.log(`🔄 Tab from URL: ${tabParam}`);
+    setActiveTab(tabParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]); // Only depend on searchParams to fix tab switching bug
 
   // State declarations - MUST come before useEffect hooks
   const [moduleAccess, setModuleAccess] = useState(null);
@@ -113,6 +113,11 @@ const StudentModuleContent = memo(function StudentModuleContent() {
   // Consent modal state
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
+
+  // Debug: Track consent modal state changes
+  useEffect(() => {
+    console.log('🟢 CONSENT MODAL STATE CHANGED:', { showConsentModal, consentChecked, moduleData: !!moduleData, moduleAccess: !!moduleAccess });
+  }, [showConsentModal, consentChecked, moduleData, moduleAccess]);
 
   // Survey status state
   const [surveySubmitted, setSurveySubmitted] = useState(false);
