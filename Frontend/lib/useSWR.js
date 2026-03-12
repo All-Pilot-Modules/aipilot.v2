@@ -23,12 +23,13 @@ export function useAPI(key, options = {}) {
     fetcher,
     {
       // Default options - optimized for speed
-      revalidateOnFocus: false, // Don't refetch when window gains focus (saves bandwidth)
+      revalidateOnFocus: false,   // Don't refetch when window gains focus (saves bandwidth)
       revalidateOnReconnect: true, // Refetch when internet reconnects
-      dedupingInterval: 30000, // Dedupe requests within 30 seconds (stable data like modules/questions)
+      dedupingInterval: 30000,     // Dedupe requests within 30 seconds
       focusThrottleInterval: 5000, // Throttle focus revalidation
-      errorRetryCount: 3, // Retry failed requests 3 times
-      errorRetryInterval: 5000, // Wait 5s between retries
+      errorRetryCount: 3,          // Retry failed requests 3 times
+      errorRetryInterval: 5000,    // Wait 5s between retries
+      keepPreviousData: true,      // Show stale data while revalidating (no blank loading screens)
       ...options, // Allow overrides
     }
   );

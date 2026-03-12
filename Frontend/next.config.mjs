@@ -20,6 +20,12 @@ const nextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'itvhjrvxrqshvxipmaqw.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'www.brockport.edu',
       },
       {
@@ -61,7 +67,20 @@ const nextConfig = {
       '@radix-ui/react-select',
       '@radix-ui/react-tabs',
       '@radix-ui/react-tooltip',
+      '@radix-ui/react-progress',
+      '@radix-ui/react-radio-group',
+      '@radix-ui/react-separator',
+      '@radix-ui/react-slider',
+      '@radix-ui/react-toggle',
+      '@radix-ui/react-toggle-group',
+      '@radix-ui/react-slot',
+      'sonner',
+      'vaul',
     ],
+    staleTimes: {
+      dynamic: 30,  // Cache dynamic pages for 30s (instant back-navigation)
+      static: 180,  // Cache static pages for 3 minutes
+    },
     serverExternalPackages: ['exceljs', 'pg'],
   },
 

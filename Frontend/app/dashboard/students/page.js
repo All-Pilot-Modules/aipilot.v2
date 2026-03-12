@@ -603,19 +603,19 @@ const StudentsPageContent = memo(function StudentsPageContent() {
       <SidebarInset>
         <SiteHeader />
         <div className="min-h-screen bg-background">
-          <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
             {/* Header with Gradient Background */}
             <div className="mb-8 relative">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 dark:from-blue-500/5 dark:via-purple-500/5 dark:to-pink-500/5 rounded-2xl"></div>
-              <div className="relative p-8 rounded-2xl border border-border/50 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
+              <div className="relative p-4 sm:p-6 md:p-8 rounded-xl sm:rounded-2xl border border-border/50 backdrop-blur-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                      <GraduationCap className="w-8 h-8 text-white" />
+                    <div className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
+                      <GraduationCap className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 text-white" />
                     </div>
                     <div>
                       <div className="flex items-center gap-3 mb-1">
-                        <h1 className="text-3xl font-bold text-foreground">Student Performance</h1>
+                        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">Student Performance</h1>
                         <div className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
                           {moduleData?.name || moduleName}
                         </div>
@@ -723,7 +723,7 @@ const StudentsPageContent = memo(function StudentsPageContent() {
             </Card>
 
             {/* Enhanced Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
               <Card className="border-border bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/30 backdrop-blur-sm overflow-hidden relative group hover:shadow-lg transition-all">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <CardContent className="p-6 relative">
@@ -954,7 +954,7 @@ const StudentsPageContent = memo(function StudentsPageContent() {
                               {getSortIcon('attempt_count')}
                             </button>
                           </th>
-                          <th className="text-left p-4 font-semibold text-sm uppercase tracking-wide">
+                          <th className="hidden md:table-cell text-left p-4 font-semibold text-sm uppercase tracking-wide">
                             <button
                               onClick={() => handleSort('grade_status')}
                               className="flex items-center gap-2 hover:text-primary transition-colors group"
@@ -964,7 +964,7 @@ const StudentsPageContent = memo(function StudentsPageContent() {
                               {getSortIcon('grade_status')}
                             </button>
                           </th>
-                          <th className="text-left p-4 font-semibold text-sm uppercase tracking-wide">
+                          <th className="hidden md:table-cell text-left p-4 font-semibold text-sm uppercase tracking-wide">
                             <button
                               onClick={() => handleSort('last_access')}
                               className="flex items-center gap-2 hover:text-primary transition-colors group"
@@ -1087,10 +1087,10 @@ const StudentsPageContent = memo(function StudentsPageContent() {
                                 </div>
                               )}
                             </td>
-                            <td className="p-4">
+                            <td className="hidden md:table-cell p-4">
                               {getGradeStatusBadge(student.grade_status)}
                             </td>
-                            <td className="p-4">
+                            <td className="hidden md:table-cell p-4">
                               <div className="flex items-center gap-2">
                                 <Clock className="w-4 h-4 text-muted-foreground" />
                                 <div className="text-sm">

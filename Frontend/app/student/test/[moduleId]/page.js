@@ -111,6 +111,12 @@ const StudentTestPage = memo(function StudentTestPage() {
   const [showUnansweredDialog, setShowUnansweredDialog] = useState(false);
   const [unansweredQuestions, setUnansweredQuestions] = useState([]);
 
+  // Guard: warn student if previous attempt feedback is still generating
+  // null = still checking, true = feedback pending, false = complete or n/a
+  const [prevFeedbackPending, setPrevFeedbackPending] = useState(null);
+  const [prevAttemptNumber, setPrevAttemptNumber] = useState(null);
+  const [feedbackWarningDismissed, setFeedbackWarningDismissed] = useState(false);
+
   // Keep answersRef in sync with answers state
   useEffect(() => {
     answersRef.current = answers;
@@ -139,8 +145,28 @@ const StudentTestPage = memo(function StudentTestPage() {
           } else {
             console.log('📝 Starting first attempt');
           }
+
+          // Guard: if this is attempt 2+, check whether previous attempt's
+          // feedback has finished. If not, we show a warning interstitial so
+          // the student doesn't accidentally burn their next attempt.
+          if (currentAttemptNumber > 1 && !statusData.all_attempts_done) {
+            setPrevAttemptNumber(currentAttemptNumber - 1);
+            try {
+              const fbStatus = await apiClient.get(
+                `/api/student/modules/${moduleId}/feedback-status?student_id=${access.studentId}&attempt=${currentAttemptNumber - 1}`
+              );
+              const fbData = fbStatus?.data || fbStatus || {};
+              setPrevFeedbackPending(!fbData.all_complete);
+            } catch {
+              // If the check fails just skip the warning
+              setPrevFeedbackPending(false);
+            }
+          } else {
+            setPrevFeedbackPending(false);
+          }
         } catch (err) {
           console.log('📝 No submission status found - Starting Attempt 1');
+          setPrevFeedbackPending(false);
         }
       }
 
@@ -1143,6 +1169,49 @@ const StudentTestPage = memo(function StudentTestPage() {
     );
   }
 
+  // Show warning interstitial if previous attempt's feedback is still generating
+  // and the student hasn't explicitly dismissed it.
+  if (prevFeedbackPending && !feedbackWarningDismissed) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg border-2 border-amber-300 dark:border-amber-700">
+          <CardHeader className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800">
+            <CardTitle className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+              <AlertCircle className="w-5 h-5" />
+              Feedback Still Generating
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <p className="text-gray-700 dark:text-gray-300">
+              Your <strong>Attempt {prevAttemptNumber}</strong> has been submitted successfully.
+              AI feedback is still being generated — this usually takes a minute or two.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              If you start <strong>Attempt {prevAttemptNumber + 1}</strong> now you will use up
+              another attempt without having reviewed your feedback.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                onClick={() => router.push(`/student/module/${moduleId}?tab=feedback`)}
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                View My Feedback
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400"
+                onClick={() => setFeedbackWarningDismissed(true)}
+              >
+                Start Attempt {prevAttemptNumber + 1} Anyway
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (questions.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -1502,7 +1571,7 @@ const StudentTestPage = memo(function StudentTestPage() {
                       <div className="space-y-6">
                         {/* Question with Interactive Blanks */}
                         <div className="p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
-                          <div className="text-lg leading-relaxed">
+                          <div className="text-lg leading-relaxed whitespace-pre-wrap">
                             {(() => {
                               const text = currentQ.text || '';
                               const blanks = currentQ.extended_config?.blanks || [];

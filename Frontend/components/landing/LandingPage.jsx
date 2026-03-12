@@ -5,7 +5,6 @@ import BrandSection from './BrandSection';
 
 // Lazy-load below-the-fold sections (user won't see these on initial paint)
 const FeaturesSection = dynamic(() => import('./FeaturesSection'));
-const TestimonialsSection = dynamic(() => import('./TestimonialsSection'));
 const StudentAccessSection = dynamic(() => import('./StudentAccessSection'));
 const Footer = dynamic(() => import('./Footer'));
 

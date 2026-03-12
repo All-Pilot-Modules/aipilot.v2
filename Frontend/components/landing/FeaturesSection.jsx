@@ -243,8 +243,8 @@ const features = [
 export default function FeaturesSection() {
   return (
     <section className="py-20 bg-white">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="space-y-48">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="space-y-20 md:space-y-36 lg:space-y-48">
           {features.map((feature, index) => {
             const ImageWrapper = feature.reverse ? SlideInRight : SlideInLeft;
             const TextWrapper = feature.reverse ? SlideInLeft : SlideInRight;
@@ -252,12 +252,12 @@ export default function FeaturesSection() {
             return (
               <div
                 key={index}
-                className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-center"
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 lg:gap-24 items-center"
               >
                 {/* Image Side */}
                 <ImageWrapper className={`${feature.reverse ? 'lg:order-2' : 'lg:order-1'}`}>
                   <RotateIn duration={0.8} delay={0.2}>
-                    <div className={`${feature.bgColor} rounded-[2.5rem] aspect-[4/3] flex items-center justify-center overflow-hidden shadow-sm`}>
+                    <div className={`${feature.bgColor} rounded-2xl md:rounded-[2.5rem] aspect-[4/3] flex items-center justify-center overflow-hidden shadow-sm`}>
                       {feature.illustration}
                     </div>
                   </RotateIn>
@@ -272,12 +272,12 @@ export default function FeaturesSection() {
                       </p>
                     </FadeIn>
                     <FadeIn delay={0.4}>
-                      <h3 className="text-4xl md:text-5xl font-bold text-slate-900 tracking-tighter leading-[1.1] mb-6">
+                      <h3 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-slate-900 tracking-tighter leading-[1.1] mb-6">
                         {feature.headline}
                       </h3>
                     </FadeIn>
                     <FadeIn delay={0.5}>
-                      <p className="text-lg text-slate-600 leading-relaxed mb-8">
+                      <p className="text-base sm:text-lg text-slate-600 leading-relaxed mb-8">
                         {feature.description}
                       </p>
                     </FadeIn>

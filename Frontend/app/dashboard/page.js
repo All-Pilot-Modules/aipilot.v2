@@ -604,7 +604,7 @@ const DashboardContent = memo(function DashboardContent() {
       <SidebarInset>
         <SiteHeader />
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-          <div className="max-w-[1600px] mx-auto px-6 py-8">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-8">
             {/* Clean Header */}
             <div className="mb-8">
               <div className="flex items-center justify-between">
@@ -623,7 +623,7 @@ const DashboardContent = memo(function DashboardContent() {
               </div>
             </div>
             {/* Compact Stats Row - Inspired by Screenshot */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               {/* Total Students */}
               <Card className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all">
                 <CardContent className="p-5">
@@ -905,7 +905,7 @@ const DashboardContent = memo(function DashboardContent() {
             )}
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
               {/* Activity Chart - Takes 2 columns */}
               <Card className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
                 <CardHeader className="border-b border-slate-200 dark:border-slate-700 pb-4">
