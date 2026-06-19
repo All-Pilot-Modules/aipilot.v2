@@ -544,7 +544,9 @@ export const apiClient = {
             }
           }
 
-          throw new Error(errorMessage);
+          const httpError = new Error(errorMessage);
+          httpError.response = { status: response.status, data: error };
+          throw httpError;
         }
 
         return response.json();
