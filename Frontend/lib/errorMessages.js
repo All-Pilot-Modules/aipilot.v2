@@ -18,7 +18,7 @@ export const getErrorMessage = (error) => {
 
   // Timeout errors
   if (errorString.includes('timeout') || errorString.includes('timed out')) {
-    return "The request took too long. Please check your connection and try again in a moment.";
+    return "The server is taking longer than expected. Your answers are saved — please try submitting again.";
   }
 
   // Authentication errors

@@ -486,8 +486,8 @@ export const apiClient = {
       timeout = 10000; // Feedback endpoints: 10 seconds
       retries = 1;     // 1 retry (fail fast, SSE/polling picks up)
     } else if (endpoint.includes('/submit-test')) {
-      timeout = 30000; // Test submission: 30 seconds
-      retries = 3;     // 3 retries (critical path)
+      timeout = 90000; // Test submission: 90 seconds (Cloud Run cold starts can take 60s+)
+      retries = 2;     // 2 retries — each attempt is long, avoid stacking
     } else if (endpoint.includes('/consent')) {
       timeout = 15000;
       retries = 3;     // Consent is important, retry more

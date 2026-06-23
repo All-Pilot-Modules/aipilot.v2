@@ -796,6 +796,30 @@ const StudentTestPage = memo(function StudentTestPage() {
 
     } catch (error) {
       console.error('❌ Submit error:', error);
+
+      // If it timed out, the server may have already committed the submission.
+      // Check submission status before surfacing an error to the student.
+      if (error.name === 'TimeoutError' || error.isTimeout || error.message?.includes('timed out')) {
+        try {
+          const statusResponse = await apiClient.get(
+            `/api/student/modules/${moduleId}/submission-status?student_id=${moduleAccess.studentId}`
+          );
+          const statusData = statusResponse?.data || statusResponse || {};
+          const submittedAttempt = statusData.current_attempt - 1;
+          if (submittedAttempt >= (attempts[questions[0]?.id] || 1)) {
+            // Submission went through on the server — treat it as success
+            const isLastAttempt = statusData.all_attempts_done;
+            setSuccess(`Attempt submitted successfully! Redirecting...`);
+            setTimeout(() => {
+              router.push(`/student/module/${moduleId}?tab=${isLastAttempt ? 'survey' : 'feedback'}`);
+            }, 2000);
+            return;
+          }
+        } catch (_) {
+          // Status check failed — fall through to show error
+        }
+      }
+
       const errorMessage = error.response?.data?.detail || error.message || "Failed to submit test. Please try again.";
       setError(errorMessage);
     } finally {
