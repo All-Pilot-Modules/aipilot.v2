@@ -493,7 +493,7 @@ const StudentTestPage = memo(function StudentTestPage() {
             question_id: questionId,
             module_id: moduleId,
             answer: formattedAnswer,
-            attempt_number: currentAttempt
+            attempt: currentAttempt
           });
 
           setSaveStatus('saved');
