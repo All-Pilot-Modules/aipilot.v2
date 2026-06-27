@@ -166,18 +166,28 @@ const StudentTestPage = memo(function StudentTestPage() {
             if (answerRecord && answerRecord.answer && answerRecord.question_id) {
               let answerValue;
 
-              // Handle different answer formats (old and new)
               if (typeof answerRecord.answer === 'object') {
-                // New format: selected_option_id, or old format: selected_option, or text_response
-                answerValue = answerRecord.answer.text_response ||
-                             answerRecord.answer.selected_option_id ||
-                             answerRecord.answer.selected_option;
+                if (answerRecord.answer.blanks !== undefined) {
+                  answerValue = answerRecord.answer.blanks;
+                } else if (answerRecord.answer.selected_options !== undefined) {
+                  answerValue = answerRecord.answer.selected_options;
+                } else if (answerRecord.answer.sub_answers !== undefined) {
+                  answerValue = answerRecord.answer.sub_answers;
+                } else {
+                  answerValue = answerRecord.answer.text_response ||
+                               answerRecord.answer.selected_option_id ||
+                               answerRecord.answer.selected_option;
+                }
               } else if (typeof answerRecord.answer === 'string') {
                 answerValue = answerRecord.answer;
               }
 
-              // Only include answers with actual content (not empty or whitespace-only)
-              if (answerValue && typeof answerValue === 'string' && answerValue.trim()) {
+              const hasContent = answerValue && (
+                (typeof answerValue === 'string' && answerValue.trim()) ||
+                (Array.isArray(answerValue) && answerValue.length > 0) ||
+                (typeof answerValue === 'object' && !Array.isArray(answerValue) && Object.keys(answerValue).length > 0)
+              );
+              if (hasContent) {
                 existingAnswers[answerRecord.question_id] = answerValue;
               }
             }
@@ -234,15 +244,27 @@ const StudentTestPage = memo(function StudentTestPage() {
                 if (answerRecord && answerRecord.question_id) {
                   let answerValue;
                   if (typeof answerRecord.answer === 'object') {
-                    answerValue = answerRecord.answer.text_response ||
-                                 answerRecord.answer.selected_option_id ||
-                                 answerRecord.answer.selected_option;
+                    if (answerRecord.answer.blanks !== undefined) {
+                      answerValue = answerRecord.answer.blanks;
+                    } else if (answerRecord.answer.selected_options !== undefined) {
+                      answerValue = answerRecord.answer.selected_options;
+                    } else if (answerRecord.answer.sub_answers !== undefined) {
+                      answerValue = answerRecord.answer.sub_answers;
+                    } else {
+                      answerValue = answerRecord.answer.text_response ||
+                                   answerRecord.answer.selected_option_id ||
+                                   answerRecord.answer.selected_option;
+                    }
                   } else if (typeof answerRecord.answer === 'string') {
                     answerValue = answerRecord.answer;
                   }
 
-                  // Only include answers with actual content (not empty or whitespace-only)
-                  if (answerValue && typeof answerValue === 'string' && answerValue.trim()) {
+                  const hasContent = answerValue && (
+                    (typeof answerValue === 'string' && answerValue.trim()) ||
+                    (Array.isArray(answerValue) && answerValue.length > 0) ||
+                    (typeof answerValue === 'object' && !Array.isArray(answerValue) && Object.keys(answerValue).length > 0)
+                  );
+                  if (hasContent) {
                     answersMap[answerRecord.question_id] = {
                       value: answerValue,
                       answerId: answerRecord.id

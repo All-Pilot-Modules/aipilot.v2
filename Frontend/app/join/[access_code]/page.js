@@ -64,7 +64,7 @@ export default function AccessAssignment() {
       // Validate the access code with the backend
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE_URL}/api/student/join-module?access_code=${encodeURIComponent(formData.accessCode.trim())}`, {
+      const response = await fetch(`${API_BASE_URL}/api/student/join-module?access_code=${encodeURIComponent(formData.accessCode.trim())}&student_id=${encodeURIComponent(formData.bannerId.trim())}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
