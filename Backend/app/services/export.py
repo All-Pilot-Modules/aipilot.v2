@@ -18,6 +18,38 @@ from app.models.survey_response import SurveyResponse
 from app.models.user import User
 
 
+def _format_student_answer(answer: Any) -> str:
+    """Render a StudentAnswer.answer JSONB payload as human-readable text.
+
+    Payload shape depends on question type (set by the student test page):
+    mcq -> selected_option_id, mcq_multiple -> selected_options,
+    fill_blank -> blanks, multi_part -> sub_answers, short/long -> text_response.
+    """
+    if not isinstance(answer, dict) or not answer:
+        return str(answer) if answer else ''
+
+    if 'blanks' in answer:
+        value = answer['blanks']
+    elif 'selected_options' in answer:
+        value = answer['selected_options']
+    elif 'sub_answers' in answer:
+        value = answer['sub_answers']
+    else:
+        value = (
+            answer.get('text_response')
+            or answer.get('selected_option_id')
+            or answer.get('selected_option')
+        )
+
+    if value is None:
+        return ''
+    if isinstance(value, dict):
+        return ', '.join(f'{k}: {v}' for k, v in value.items())
+    if isinstance(value, list):
+        return ', '.join(str(v) for v in value)
+    return str(value)
+
+
 class ModuleExportService:
     """Service for exporting module data to Excel with multiple sheets"""
 
@@ -136,12 +168,7 @@ class ModuleExportService:
         attempt2 = []
 
         for answer, question_text, question_type in answers:
-            # Format the answer based on type
-            if isinstance(answer.answer, dict):
-                # MCQ answer
-                student_answer = answer.answer.get('selected_option', '') if answer.answer else ''
-            else:
-                student_answer = str(answer.answer) if answer.answer else ''
+            student_answer = _format_student_answer(answer.answer)
 
             data = {
                 'Answer ID': str(answer.id),
@@ -454,7 +481,7 @@ class ModuleExportService:
 
                     if attempt_answer:
                         # Add answer
-                        answer_text = str(attempt_answer.answer)
+                        answer_text = _format_student_answer(attempt_answer.answer)
                         if len(answer_text) > 200:
                             answer_text = answer_text[:200] + '...'
                         row[f'Attempt {attempt_num} Answer'] = answer_text
